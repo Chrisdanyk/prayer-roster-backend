@@ -125,4 +125,13 @@ class MeAvailabilityResourceTest {
 
         verify(availabilityService).cancel(USER_ID, 1L);
     }
+
+    @Test
+    void getOwnAvailability_returns500WhenSomehowUnauthenticated() throws Exception {
+        // The security filter chain rejects unauthenticated /api/** requests before this
+        // controller is ever reached in production; this proves the fallback is sound anyway.
+        SecurityContextHolder.clearContext();
+
+        mockMvc.perform(get("/api/me/availability")).andExpect(status().is5xxServerError());
+    }
 }

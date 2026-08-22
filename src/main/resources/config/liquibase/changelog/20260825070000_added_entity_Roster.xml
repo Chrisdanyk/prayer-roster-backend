@@ -1,0 +1,174 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260825070000-1" author="prayer-roster">
+        <createTable tableName="roster">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="period_from" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="period_to" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="status" type="varchar(30)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="published_at" type="${datetimeType}"/>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="20260825070000-2" author="prayer-roster">
+        <createTable tableName="roster_generation">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="roster_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="trigger" type="varchar(30)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="planning_from" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="planning_to" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="solver_duration_ms" type="bigint"/>
+            <column name="hard_score" type="integer"/>
+            <column name="soft_score" type="integer"/>
+            <column name="feasible" type="boolean"/>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="regenerated" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reschedule_reason" type="varchar(500)"/>
+            <column name="error_message" type="varchar(1000)"/>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="roster_generation"
+            baseColumnNames="roster_id"
+            constraintName="fk_roster_generation_roster_id"
+            referencedTableName="roster"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <createIndex tableName="roster_generation" indexName="ix_roster_generation_roster_id">
+            <column name="roster_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20260825070000-3" author="prayer-roster">
+        <createTable tableName="prayer_session">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="date" type="date">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_prayer_session_date"/>
+            </column>
+            <column name="day_of_week" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="requires_preacher" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+            <column name="requires_rescheduling" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="roster_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="prayer_session"
+            baseColumnNames="roster_id"
+            constraintName="fk_prayer_session_roster_id"
+            referencedTableName="roster"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <createIndex tableName="prayer_session" indexName="ix_prayer_session_roster_id">
+            <column name="roster_id"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20260825070000-4" author="prayer-roster">
+        <createTable tableName="prayer_assignment">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="session_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="role" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="user_id" type="varchar(100)"/>
+            <column name="locked" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="generation_id" type="bigint"/>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="prayer_assignment"
+            baseColumnNames="session_id"
+            constraintName="fk_prayer_assignment_session_id"
+            referencedTableName="prayer_session"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <addForeignKeyConstraint
+            baseTableName="prayer_assignment"
+            baseColumnNames="user_id"
+            constraintName="fk_prayer_assignment_user_id"
+            referencedTableName="app_user"
+            referencedColumnNames="id"
+        />
+        <addForeignKeyConstraint
+            baseTableName="prayer_assignment"
+            baseColumnNames="generation_id"
+            constraintName="fk_prayer_assignment_generation_id"
+            referencedTableName="roster_generation"
+            referencedColumnNames="id"
+        />
+        <addUniqueConstraint
+            tableName="prayer_assignment"
+            columnNames="session_id, role"
+            constraintName="ux_prayer_assignment_session_id_role"
+        />
+        <createIndex tableName="prayer_assignment" indexName="ix_prayer_assignment_user_id">
+            <column name="user_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
