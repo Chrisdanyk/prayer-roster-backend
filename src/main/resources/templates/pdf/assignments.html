@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="UTF-8" />
+    <title th:text="${title}">My Assignments</title>
+    <style type="text/css">
+      @page {
+        size: A4;
+        margin: 2cm;
+      }
+      body {
+        font-family: Helvetica, Arial, sans-serif;
+        color: #222222;
+        font-size: 11pt;
+      }
+      h1 {
+        color: #2c3e50;
+        border-bottom: 3px solid #2c3e50;
+        padding-bottom: 8px;
+        font-size: 18pt;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-top: 16px;
+      }
+      th {
+        text-align: left;
+        background-color: #ecf0f1;
+        padding: 6px 10px;
+        border-bottom: 1px solid #bdc3c7;
+      }
+      td {
+        padding: 6px 10px;
+        border-bottom: 1px solid #ecf0f1;
+      }
+      tr.odd {
+        background-color: #f7f9f9;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 th:text="${title}">My Assignments</h1>
+    <table>
+      <thead>
+        <tr>
+          <th>Date</th>
+          <th>Role</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr th:each="row, rowStat : ${rows}" th:class="${rowStat.odd} ? 'odd' : ''">
+          <td th:text="${row.dateLabel}">Date</td>
+          <td th:text="${row.roleLabel}">Role</td>
+        </tr>
+      </tbody>
+    </table>
+  </body>
+</html>

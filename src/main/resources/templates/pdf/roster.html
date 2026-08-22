@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+  <head>
+    <meta charset="UTF-8" />
+    <title th:text="${title}">Roster</title>
+    <style type="text/css">
+      @page {
+        size: A4;
+        margin: 2cm;
+      }
+      body {
+        font-family: Helvetica, Arial, sans-serif;
+        color: #222222;
+        font-size: 11pt;
+      }
+      h1 {
+        color: #2c3e50;
+        border-bottom: 3px solid #2c3e50;
+        padding-bottom: 8px;
+        font-size: 18pt;
+      }
+      .period {
+        color: #555555;
+        margin-bottom: 20px;
+      }
+      h2.week {
+        background-color: #2c3e50;
+        color: #ffffff;
+        padding: 6px 10px;
+        font-size: 12pt;
+        margin-top: 18px;
+        margin-bottom: 0;
+      }
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        margin-bottom: 4px;
+      }
+      th {
+        text-align: left;
+        background-color: #ecf0f1;
+        padding: 6px 10px;
+        border-bottom: 1px solid #bdc3c7;
+      }
+      td {
+        padding: 6px 10px;
+        border-bottom: 1px solid #ecf0f1;
+      }
+      tr.odd {
+        background-color: #f7f9f9;
+      }
+    </style>
+  </head>
+  <body>
+    <h1 th:text="${title}">Prayer Roster</h1>
+    <p class="period">
+      <span th:text="${periodFrom}">From</span> &#8211; <span th:text="${periodTo}">To</span>
+    </p>
+    <th:block th:each="week : ${weeks}">
+      <h2 class="week" th:text="${week.weekLabel}">Week</h2>
+      <table>
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th th:text="${moderatorLabel}">Moderator</th>
+            <th th:text="${preacherLabel}">Preacher</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr th:each="row, rowStat : ${week.rows}" th:class="${rowStat.odd} ? 'odd' : ''">
+            <td>
+              <span th:text="${row.dayLabel}">Day</span> <span th:text="${row.dateLabel}">Date</span>
+            </td>
+            <td th:text="${row.moderatorName}">Moderator</td>
+            <td th:text="${row.preacherName}">Preacher</td>
+          </tr>
+        </tbody>
+      </table>
+    </th:block>
+  </body>
+</html>
