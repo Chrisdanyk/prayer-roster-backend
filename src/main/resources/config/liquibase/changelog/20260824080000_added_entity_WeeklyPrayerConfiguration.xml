@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260824080000-1" author="prayer-roster">
+        <createTable tableName="weekly_prayer_configuration">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="effective_from" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="effective_to" type="date"/>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <!--
+          At most one current (open-ended) version at a time. A plain unique index on effective_to
+          would NOT enforce this in Postgres - NULLs are treated as distinct from each other, so
+          multiple NULL rows would be allowed. A partial unique index on a constant expression,
+          scoped to just the NULL rows, is the correct Postgres idiom for "at most one row matching
+          a condition" - hence raw SQL rather than Liquibase's plain <createIndex>.
+        -->
+        <sql>
+            CREATE UNIQUE INDEX ux_weekly_prayer_configuration_current
+            ON weekly_prayer_configuration ((true))
+            WHERE effective_to IS NULL
+        </sql>
+    </changeSet>
+
+    <changeSet id="20260824080000-2" author="prayer-roster">
+        <createTable tableName="weekly_prayer_configuration_day">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="configuration_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="day_of_week" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="requires_preacher" type="boolean">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="weekly_prayer_configuration_day"
+            baseColumnNames="configuration_id"
+            constraintName="fk_weekly_prayer_config_day_config_id"
+            referencedTableName="weekly_prayer_configuration"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <addUniqueConstraint
+            tableName="weekly_prayer_configuration_day"
+            columnNames="configuration_id, day_of_week"
+            constraintName="ux_weekly_prayer_config_day_config_id_day"
+        />
+    </changeSet>
+</databaseChangeLog>
