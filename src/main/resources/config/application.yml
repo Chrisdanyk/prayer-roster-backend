@@ -176,6 +176,13 @@ server:
 springdoc:
   show-actuator: true
 
+timefold:
+  solver:
+    termination:
+      # A small-scale problem (dozens of sessions/users) - bounded so a generate request always
+      # returns in predictable time instead of running until Timefold's other termination defaults.
+      spent-limit: 30s
+
 # Properties to be exposed on the /info management endpoint
 info:
   # Comma separated list of profiles that will trigger the ribbon to show

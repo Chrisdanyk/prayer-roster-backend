@@ -29,4 +29,16 @@ public interface UserAvailabilityRepository extends JpaRepository<UserAvailabili
         @Param("endDate") LocalDate endDate,
         @Param("excludeId") Long excludeId
     );
+
+    /**
+     * Every ACTIVE availability record overlapping a planning period, in one query - the Timefold
+     * solve needs this as a bulk problem-fact list, never fetched per-user (which would be N+1 over
+     * the eligible-user list).
+     */
+    @Query(
+        "select ua from UserAvailability ua join fetch ua.user " +
+        "where ua.status = com.prayerroster.domain.UserAvailabilityStatus.ACTIVE " +
+        "and ua.startDate <= :to and ua.endDate >= :from"
+    )
+    List<UserAvailability> findActiveOverlapping(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

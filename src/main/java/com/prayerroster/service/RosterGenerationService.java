@@ -1,29 +1,42 @@
 package com.prayerroster.service;
 
 import com.prayerroster.domain.*;
+import com.prayerroster.repository.PrayerAssignmentRepository;
 import com.prayerroster.repository.PrayerSessionRepository;
 import com.prayerroster.repository.RosterGenerationRepository;
 import com.prayerroster.repository.RosterRepository;
+import com.prayerroster.repository.UserAvailabilityRepository;
+import com.prayerroster.repository.UserRepository;
 import com.prayerroster.repository.WeeklyPrayerConfigurationRepository;
+import com.prayerroster.scheduling.RosterSolution;
+import com.prayerroster.scheduling.SolverService;
 import com.prayerroster.service.dto.GenerateRosterRequest;
 import com.prayerroster.service.dto.RosterDTO;
 import com.prayerroster.web.rest.errors.BadRequestAlertException;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Turns the recurring weekly template into actual dated {@link PrayerSession}/{@link
- * PrayerAssignment} rows for a period (see docs/phase1-architecture.md sections 4-5, 33). Every
- * date-to-config lookup happens up front, in memory, against the whole (small) version history
- * loaded in one query - never one query per date - so this stays O(1) queries regardless of period
- * length. Validated entirely before anything is persisted: either the whole period generates
- * cleanly in one transaction, or nothing is written at all - no partial/orphaned rows to clean up.
+ * PrayerAssignment} rows for a period, then hands the resulting planning problem to Timefold (see
+ * docs/phase1-architecture.md sections 4-6, 11, 33). Every date-to-config lookup happens up front, in
+ * memory, against the whole (small) version history loaded in one query - never one query per date -
+ * so this stays O(1) queries regardless of period length. The whole period is validated before
+ * anything is persisted: either it generates and solves cleanly in one transaction, or nothing is
+ * written at all.
  * <p>
- * Every {@link PrayerAssignment} row is created with a {@code null} user - Sprint 5's Timefold
- * solver fills that in. The {@link Roster} produced here is always {@link RosterStatus#DRAFT}: this
- * sprint has no solver to auto-publish on.
+ * On a feasible solve, assignments are filled in and the {@link Roster} auto-publishes
+ * (per the roster lifecycle decision - no manual review step for the happy path). On an infeasible
+ * solve, the {@link RosterGeneration} records why (a per-constraint violation breakdown) and the
+ * {@link Roster} stays {@link RosterStatus#DRAFT} for an admin to investigate.
  */
 @Service
 @Transactional
@@ -34,18 +47,30 @@ public class RosterGenerationService {
     private final RosterRepository rosterRepository;
     private final RosterGenerationRepository rosterGenerationRepository;
     private final PrayerSessionRepository prayerSessionRepository;
+    private final PrayerAssignmentRepository prayerAssignmentRepository;
     private final WeeklyPrayerConfigurationRepository weeklyPrayerConfigurationRepository;
+    private final UserRepository userRepository;
+    private final UserAvailabilityRepository userAvailabilityRepository;
+    private final SolverService solverService;
 
     public RosterGenerationService(
         RosterRepository rosterRepository,
         RosterGenerationRepository rosterGenerationRepository,
         PrayerSessionRepository prayerSessionRepository,
-        WeeklyPrayerConfigurationRepository weeklyPrayerConfigurationRepository
+        PrayerAssignmentRepository prayerAssignmentRepository,
+        WeeklyPrayerConfigurationRepository weeklyPrayerConfigurationRepository,
+        UserRepository userRepository,
+        UserAvailabilityRepository userAvailabilityRepository,
+        SolverService solverService
     ) {
         this.rosterRepository = rosterRepository;
         this.rosterGenerationRepository = rosterGenerationRepository;
         this.prayerSessionRepository = prayerSessionRepository;
+        this.prayerAssignmentRepository = prayerAssignmentRepository;
         this.weeklyPrayerConfigurationRepository = weeklyPrayerConfigurationRepository;
+        this.userRepository = userRepository;
+        this.userAvailabilityRepository = userAvailabilityRepository;
+        this.solverService = solverService;
     }
 
     public RosterDTO generate(GenerateRosterRequest request) {
@@ -77,39 +102,92 @@ public class RosterGenerationService {
         generation.setTrigger(RosterGenerationTrigger.MANUAL);
         generation.setPlanningFrom(from);
         generation.setPlanningTo(to);
-        generation.setStatus(RosterGenerationStatus.COMPLETED);
+        generation.setStatus(RosterGenerationStatus.RUNNING);
         generation.setRegenerated(false);
         generation = rosterGenerationRepository.save(generation);
 
+        List<PrayerAssignment> assignments = new ArrayList<>();
         for (RequiredSession required : requiredSessions) {
-            createSession(roster, generation, required);
+            assignments.addAll(createSession(roster, generation, required));
         }
+
+        List<User> eligibleUsers = userRepository.findAllEligibleActive();
+        List<UserAvailability> unavailabilities = userAvailabilityRepository.findActiveOverlapping(from, to);
+
+        int hardScore;
+        int softScore;
+        long solverDurationMs;
+        RosterSolution solved = null;
+        if (eligibleUsers.isEmpty()) {
+            // Timefold refuses to solve an empty value range outright, and structurally there is
+            // nothing to gain from trying anyway - zero eligible users can never fill anything.
+            hardScore = -assignments.size();
+            softScore = 0;
+            solverDurationMs = 0;
+        } else {
+            RosterSolution problem = new RosterSolution(eligibleUsers, unavailabilities, assignments);
+            Instant solveStart = Instant.now();
+            solved = solverService.solve(generation.getId(), problem);
+            solverDurationMs = Duration.between(solveStart, Instant.now()).toMillis();
+            hardScore = solved.getScore().hardScore();
+            softScore = solved.getScore().softScore();
+        }
+        generation.setSolverDurationMs(solverDurationMs);
+        generation.setHardScore(hardScore);
+        generation.setSoftScore(softScore);
+        generation.setFeasible(hardScore == 0);
+
+        if (hardScore == 0) {
+            Map<Long, PrayerAssignment> solvedById = solved.getAssignments().stream().collect(Collectors.toMap(PrayerAssignment::getId, Function.identity()));
+            for (PrayerAssignment managed : assignments) {
+                managed.setUser(solvedById.get(managed.getId()).getUser());
+            }
+            generation.setStatus(RosterGenerationStatus.COMPLETED);
+            roster.setStatus(RosterStatus.PUBLISHED);
+            roster.setPublishedAt(Instant.now());
+            rosterRepository.save(roster);
+        } else {
+            generation.setStatus(RosterGenerationStatus.INFEASIBLE);
+            generation.setErrorMessage(
+                solved != null
+                    ? solverService.explainHardConstraintViolations(solved)
+                    : "No active user has any capability (canModerate/canPreach) - configure at least one eligible user first"
+            );
+        }
+        rosterGenerationRepository.save(generation);
 
         return RosterDTO.from(roster);
     }
 
-    private void createSession(Roster roster, RosterGeneration generation, RequiredSession required) {
+    private List<PrayerAssignment> createSession(Roster roster, RosterGeneration generation, RequiredSession required) {
         PrayerSession session = new PrayerSession();
         session.setRoster(roster);
         session.setDate(required.date());
         session.setDayOfWeek(required.date().getDayOfWeek());
         session.setRequiresPreacher(required.requiresPreacher());
+        session = prayerSessionRepository.save(session);
+
+        List<PrayerAssignment> created = new ArrayList<>();
 
         PrayerAssignment moderatorAssignment = new PrayerAssignment();
         moderatorAssignment.setSession(session);
         moderatorAssignment.setRole(PrayerAssignmentRole.MODERATOR);
         moderatorAssignment.setGeneration(generation);
+        moderatorAssignment = prayerAssignmentRepository.save(moderatorAssignment);
         session.getAssignments().add(moderatorAssignment);
+        created.add(moderatorAssignment);
 
         if (required.requiresPreacher()) {
             PrayerAssignment preacherAssignment = new PrayerAssignment();
             preacherAssignment.setSession(session);
             preacherAssignment.setRole(PrayerAssignmentRole.PREACHER);
             preacherAssignment.setGeneration(generation);
+            preacherAssignment = prayerAssignmentRepository.save(preacherAssignment);
             session.getAssignments().add(preacherAssignment);
+            created.add(preacherAssignment);
         }
 
-        prayerSessionRepository.save(session);
+        return created;
     }
 
     private RequiredSession resolveRequiredSession(LocalDate date, List<WeeklyPrayerConfiguration> configVersions) {

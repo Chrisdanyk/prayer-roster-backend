@@ -1,5 +1,9 @@
 package com.prayerroster.domain;
 
+import ai.timefold.solver.core.api.domain.entity.PlanningEntity;
+import ai.timefold.solver.core.api.domain.entity.PlanningPin;
+import ai.timefold.solver.core.api.domain.lookup.PlanningId;
+import ai.timefold.solver.core.api.domain.variable.PlanningVariable;
 import jakarta.persistence.*;
 import jakarta.validation.constraints.NotNull;
 
@@ -9,13 +13,14 @@ import jakarta.validation.constraints.NotNull;
  * preacher on moderation-only days" without needing a runtime constraint for it (see
  * docs/phase1-architecture.md section 2/11).
  * <p>
- * {@code user} is {@code null} until Sprint 5's Timefold solver fills it in - this class becomes
- * the Timefold {@code @PlanningEntity} at that point, with {@code user} as the
- * {@code @PlanningVariable}. {@code locked} exists now for that same future use: pinning unaffected
- * assignments during a Sprint 6 reschedule so the solver structurally cannot move them.
+ * The Timefold {@code @PlanningEntity}: {@code user} is the {@code @PlanningVariable} the solver
+ * fills in, {@code locked} is the {@code @PlanningPin} - true means Timefold must not move this
+ * assignment, which from Sprint 6 on is how reschedule solves leave unaffected assignments alone
+ * (a structural guarantee, not a soft penalty).
  */
 @Entity
 @Table(name = "prayer_assignment")
+@PlanningEntity
 public class PrayerAssignment extends AbstractAuditingEntity<Long> {
 
     private static final long serialVersionUID = 1L;
@@ -24,6 +29,7 @@ public class PrayerAssignment extends AbstractAuditingEntity<Long> {
     @GeneratedValue(strategy = GenerationType.SEQUENCE, generator = "sequenceGenerator")
     @SequenceGenerator(name = "sequenceGenerator", sequenceName = "sequence_generator", allocationSize = 50)
     @Column(name = "id")
+    @PlanningId
     private Long id;
 
     @NotNull
@@ -38,10 +44,12 @@ public class PrayerAssignment extends AbstractAuditingEntity<Long> {
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
+    @PlanningVariable(valueRangeProviderRefs = "userRange")
     private User user;
 
     @NotNull
     @Column(name = "locked", nullable = false)
+    @PlanningPin
     private boolean locked = false;
 
     @ManyToOne(fetch = FetchType.LAZY)

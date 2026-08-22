@@ -1,6 +1,7 @@
 package com.prayerroster.repository;
 
 import com.prayerroster.domain.User;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -9,6 +10,14 @@ import org.springframework.data.jpa.repository.Query;
 
 public interface UserRepository extends JpaRepository<User, String> {
     Optional<User> findByEmailIgnoreCase(String email);
+
+    /**
+     * The Timefold value range for a solve: active users with at least one capability. Anyone with
+     * neither {@code canModerate} nor {@code canPreach} can never fill any assignment, so excluding
+     * them up front keeps the solver's search space to only genuinely eligible candidates.
+     */
+    @Query("select u from User u where u.active = true and (u.canModerate = true or u.canPreach = true)")
+    List<User> findAllEligibleActive();
 
     /**
      * Fetches the user with its role and the role's permissions in one query - this is the path
