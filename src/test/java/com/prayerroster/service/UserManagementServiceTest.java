@@ -2,6 +2,8 @@ package com.prayerroster.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -22,6 +24,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -38,11 +41,14 @@ class UserManagementServiceTest {
     @Mock
     private DynamicAuthoritiesService authoritiesService;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private UserManagementService service;
 
     @BeforeEach
     void setUp() {
-        service = new UserManagementService(userRepository, roleRepository, authoritiesService);
+        service = new UserManagementService(userRepository, roleRepository, authoritiesService, eventPublisher);
     }
 
     private User user() {
@@ -112,7 +118,7 @@ class UserManagementServiceTest {
     }
 
     @Test
-    void updateStatus_togglesActiveAndEvictsCache() {
+    void updateStatus_togglesActiveAndEvictsCacheAndPublishesDeactivationEvent() {
         User existing = user();
         when(userRepository.findByIdWithRole("sub-1")).thenReturn(Optional.of(existing));
         when(userRepository.save(existing)).thenReturn(existing);
@@ -121,6 +127,31 @@ class UserManagementServiceTest {
 
         assertThat(result.active()).isFalse();
         verify(authoritiesService).evict("sub-1");
+        verify(eventPublisher).publishEvent(new UserDeactivatedEvent("sub-1"));
+    }
+
+    @Test
+    void updateStatus_doesNotPublishWhenStayingActive() {
+        User existing = user();
+        when(userRepository.findByIdWithRole("sub-1")).thenReturn(Optional.of(existing));
+        when(userRepository.save(existing)).thenReturn(existing);
+
+        service.updateStatus("sub-1", true);
+
+        verify(eventPublisher, never()).publishEvent(any());
+    }
+
+    @Test
+    void updateStatus_doesNotPublishWhenReactivating() {
+        User existing = user();
+        existing.setActive(false);
+        when(userRepository.findByIdWithRole("sub-1")).thenReturn(Optional.of(existing));
+        when(userRepository.save(existing)).thenReturn(existing);
+
+        UserDTO result = service.updateStatus("sub-1", true);
+
+        assertThat(result.active()).isTrue();
+        verify(eventPublisher, never()).publishEvent(any());
     }
 
     @Test

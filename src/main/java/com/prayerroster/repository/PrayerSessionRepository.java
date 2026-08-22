@@ -20,4 +20,11 @@ public interface PrayerSessionRepository extends JpaRepository<PrayerSession, Lo
 
     @Query("select distinct s from PrayerSession s left join fetch s.assignments a left join fetch a.user where s.id = :id")
     Optional<PrayerSession> findByIdWithAssignments(@Param("id") Long id);
+
+    @Query(
+        "select distinct s from PrayerSession s " +
+        "left join fetch s.assignments a left join fetch a.user " +
+        "where s.roster.id = :rosterId order by s.date"
+    )
+    List<PrayerSession> findByRosterIdWithAssignments(@Param("rosterId") Long rosterId);
 }

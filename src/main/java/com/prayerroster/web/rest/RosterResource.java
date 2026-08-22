@@ -1,8 +1,10 @@
 package com.prayerroster.web.rest;
 
+import com.prayerroster.service.ReschedulingService;
 import com.prayerroster.service.RosterGenerationService;
 import com.prayerroster.service.RosterService;
 import com.prayerroster.service.dto.GenerateRosterRequest;
+import com.prayerroster.service.dto.RescheduleRequest;
 import com.prayerroster.service.dto.RosterDTO;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -22,10 +24,12 @@ public class RosterResource {
 
     private final RosterGenerationService rosterGenerationService;
     private final RosterService rosterService;
+    private final ReschedulingService reschedulingService;
 
-    public RosterResource(RosterGenerationService rosterGenerationService, RosterService rosterService) {
+    public RosterResource(RosterGenerationService rosterGenerationService, RosterService rosterService, ReschedulingService reschedulingService) {
         this.rosterGenerationService = rosterGenerationService;
         this.rosterService = rosterService;
+        this.reschedulingService = reschedulingService;
     }
 
     @PostMapping("/generate")
@@ -33,6 +37,12 @@ public class RosterResource {
     public ResponseEntity<RosterDTO> generate(@Valid @RequestBody GenerateRosterRequest request) {
         RosterDTO created = rosterGenerationService.generate(request);
         return ResponseEntity.status(201).body(created);
+    }
+
+    @PostMapping("/{id}/reschedule")
+    @PreAuthorize("hasAuthority('PERM_ROSTER_RESCHEDULE')")
+    public RosterDTO reschedule(@PathVariable Long id, @Valid @RequestBody(required = false) RescheduleRequest request) {
+        return reschedulingService.reschedule(id, request != null ? request.reason() : null);
     }
 
     @GetMapping

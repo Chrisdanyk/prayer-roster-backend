@@ -9,6 +9,7 @@ import com.prayerroster.service.dto.UpdateUserRequest;
 import com.prayerroster.service.dto.UserDTO;
 import com.prayerroster.web.rest.errors.BadRequestAlertException;
 import com.prayerroster.web.rest.errors.EntityNotFoundException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -28,11 +29,18 @@ public class UserManagementService {
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
     private final DynamicAuthoritiesService authoritiesService;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public UserManagementService(UserRepository userRepository, RoleRepository roleRepository, DynamicAuthoritiesService authoritiesService) {
+    public UserManagementService(
+        UserRepository userRepository,
+        RoleRepository roleRepository,
+        DynamicAuthoritiesService authoritiesService,
+        ApplicationEventPublisher eventPublisher
+    ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
         this.authoritiesService = authoritiesService;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -58,9 +66,13 @@ public class UserManagementService {
 
     public UserDTO updateStatus(String id, boolean active) {
         User user = getExisting(id);
+        boolean wasActive = user.isActive();
         user.setActive(active);
         User saved = userRepository.save(user);
         authoritiesService.evict(id);
+        if (wasActive && !active) {
+            eventPublisher.publishEvent(new UserDeactivatedEvent(id));
+        }
         return UserDTO.from(saved);
     }
 

@@ -24,8 +24,10 @@ import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 
 @ExtendWith(MockitoExtension.class)
 class UserAvailabilityServiceTest {
@@ -38,11 +40,14 @@ class UserAvailabilityServiceTest {
     @Mock
     private UserRepository userRepository;
 
+    @Mock
+    private ApplicationEventPublisher eventPublisher;
+
     private UserAvailabilityService service;
 
     @BeforeEach
     void setUp() {
-        service = new UserAvailabilityService(availabilityRepository, userRepository);
+        service = new UserAvailabilityService(availabilityRepository, userRepository, eventPublisher);
         lenient().when(availabilityRepository.findOverlapping(eq(USER_ID), any(), any(), any())).thenReturn(List.of());
     }
 
@@ -87,6 +92,10 @@ class UserAvailabilityServiceTest {
         assertThat(result.startDate()).isEqualTo(start);
         assertThat(result.endDate()).isEqualTo(end);
         assertThat(result.status()).isEqualTo(UserAvailabilityStatus.ACTIVE);
+
+        ArgumentCaptor<UserAvailabilityChangedEvent> eventCaptor = ArgumentCaptor.forClass(UserAvailabilityChangedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue()).isEqualTo(new UserAvailabilityChangedEvent(USER_ID, start, end));
     }
 
     @Test
@@ -125,6 +134,7 @@ class UserAvailabilityServiceTest {
         assertThat(result.startDate()).isEqualTo(newStart);
         assertThat(result.endDate()).isEqualTo(newEnd);
         assertThat(result.reason()).isEqualTo("Updated");
+        verify(eventPublisher).publishEvent(new UserAvailabilityChangedEvent(USER_ID, newStart, newEnd));
     }
 
     @Test

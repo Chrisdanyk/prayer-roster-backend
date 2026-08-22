@@ -5,37 +5,28 @@ import com.prayerroster.repository.PrayerAssignmentRepository;
 import com.prayerroster.repository.PrayerSessionRepository;
 import com.prayerroster.repository.RosterGenerationRepository;
 import com.prayerroster.repository.RosterRepository;
-import com.prayerroster.repository.UserAvailabilityRepository;
-import com.prayerroster.repository.UserRepository;
 import com.prayerroster.repository.WeeklyPrayerConfigurationRepository;
-import com.prayerroster.scheduling.RosterSolution;
-import com.prayerroster.scheduling.SolverService;
 import com.prayerroster.service.dto.GenerateRosterRequest;
 import com.prayerroster.service.dto.RosterDTO;
 import com.prayerroster.web.rest.errors.BadRequestAlertException;
-import java.time.Duration;
-import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
-import java.util.function.Function;
-import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Turns the recurring weekly template into actual dated {@link PrayerSession}/{@link
- * PrayerAssignment} rows for a period, then hands the resulting planning problem to Timefold (see
- * docs/phase1-architecture.md sections 4-6, 11, 33). Every date-to-config lookup happens up front, in
- * memory, against the whole (small) version history loaded in one query - never one query per date -
- * so this stays O(1) queries regardless of period length. The whole period is validated before
- * anything is persisted: either it generates and solves cleanly in one transaction, or nothing is
- * written at all.
+ * PrayerAssignment} rows for a period, then hands the resulting planning problem to Timefold via
+ * {@link RosterSolvingService} (see docs/phase1-architecture.md sections 4-6, 11, 33). Every
+ * date-to-config lookup happens up front, in memory, against the whole (small) version history
+ * loaded in one query - never one query per date - so this stays O(1) queries regardless of period
+ * length. The whole period is validated before anything is persisted: either it generates and
+ * solves cleanly in one transaction, or nothing is written at all.
  * <p>
- * On a feasible solve, assignments are filled in and the {@link Roster} auto-publishes
- * (per the roster lifecycle decision - no manual review step for the happy path). On an infeasible
- * solve, the {@link RosterGeneration} records why (a per-constraint violation breakdown) and the
+ * On a feasible solve, assignments are filled in and the {@link Roster} auto-publishes (per the
+ * roster lifecycle decision - no manual review step for the happy path). On an infeasible solve,
+ * the {@link RosterGeneration} records why (a per-constraint violation breakdown) and the
  * {@link Roster} stays {@link RosterStatus#DRAFT} for an admin to investigate.
  */
 @Service
@@ -49,9 +40,7 @@ public class RosterGenerationService {
     private final PrayerSessionRepository prayerSessionRepository;
     private final PrayerAssignmentRepository prayerAssignmentRepository;
     private final WeeklyPrayerConfigurationRepository weeklyPrayerConfigurationRepository;
-    private final UserRepository userRepository;
-    private final UserAvailabilityRepository userAvailabilityRepository;
-    private final SolverService solverService;
+    private final RosterSolvingService rosterSolvingService;
 
     public RosterGenerationService(
         RosterRepository rosterRepository,
@@ -59,18 +48,14 @@ public class RosterGenerationService {
         PrayerSessionRepository prayerSessionRepository,
         PrayerAssignmentRepository prayerAssignmentRepository,
         WeeklyPrayerConfigurationRepository weeklyPrayerConfigurationRepository,
-        UserRepository userRepository,
-        UserAvailabilityRepository userAvailabilityRepository,
-        SolverService solverService
+        RosterSolvingService rosterSolvingService
     ) {
         this.rosterRepository = rosterRepository;
         this.rosterGenerationRepository = rosterGenerationRepository;
         this.prayerSessionRepository = prayerSessionRepository;
         this.prayerAssignmentRepository = prayerAssignmentRepository;
         this.weeklyPrayerConfigurationRepository = weeklyPrayerConfigurationRepository;
-        this.userRepository = userRepository;
-        this.userAvailabilityRepository = userAvailabilityRepository;
-        this.solverService = solverService;
+        this.rosterSolvingService = rosterSolvingService;
     }
 
     public RosterDTO generate(GenerateRosterRequest request) {
@@ -111,50 +96,7 @@ public class RosterGenerationService {
             assignments.addAll(createSession(roster, generation, required));
         }
 
-        List<User> eligibleUsers = userRepository.findAllEligibleActive();
-        List<UserAvailability> unavailabilities = userAvailabilityRepository.findActiveOverlapping(from, to);
-
-        int hardScore;
-        int softScore;
-        long solverDurationMs;
-        RosterSolution solved = null;
-        if (eligibleUsers.isEmpty()) {
-            // Timefold refuses to solve an empty value range outright, and structurally there is
-            // nothing to gain from trying anyway - zero eligible users can never fill anything.
-            hardScore = -assignments.size();
-            softScore = 0;
-            solverDurationMs = 0;
-        } else {
-            RosterSolution problem = new RosterSolution(eligibleUsers, unavailabilities, assignments);
-            Instant solveStart = Instant.now();
-            solved = solverService.solve(generation.getId(), problem);
-            solverDurationMs = Duration.between(solveStart, Instant.now()).toMillis();
-            hardScore = solved.getScore().hardScore();
-            softScore = solved.getScore().softScore();
-        }
-        generation.setSolverDurationMs(solverDurationMs);
-        generation.setHardScore(hardScore);
-        generation.setSoftScore(softScore);
-        generation.setFeasible(hardScore == 0);
-
-        if (hardScore == 0) {
-            Map<Long, PrayerAssignment> solvedById = solved.getAssignments().stream().collect(Collectors.toMap(PrayerAssignment::getId, Function.identity()));
-            for (PrayerAssignment managed : assignments) {
-                managed.setUser(solvedById.get(managed.getId()).getUser());
-            }
-            generation.setStatus(RosterGenerationStatus.COMPLETED);
-            roster.setStatus(RosterStatus.PUBLISHED);
-            roster.setPublishedAt(Instant.now());
-            rosterRepository.save(roster);
-        } else {
-            generation.setStatus(RosterGenerationStatus.INFEASIBLE);
-            generation.setErrorMessage(
-                solved != null
-                    ? solverService.explainHardConstraintViolations(solved)
-                    : "No active user has any capability (canModerate/canPreach) - configure at least one eligible user first"
-            );
-        }
-        rosterGenerationRepository.save(generation);
+        rosterSolvingService.solveAndApply(roster, generation, assignments, from, to, RosterStatus.DRAFT);
 
         return RosterDTO.from(roster);
     }

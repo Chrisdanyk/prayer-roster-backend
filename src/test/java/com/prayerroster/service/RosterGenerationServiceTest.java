@@ -3,23 +3,18 @@ package com.prayerroster.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
 import com.prayerroster.domain.*;
 import com.prayerroster.repository.PrayerAssignmentRepository;
 import com.prayerroster.repository.PrayerSessionRepository;
 import com.prayerroster.repository.RosterGenerationRepository;
 import com.prayerroster.repository.RosterRepository;
-import com.prayerroster.repository.UserAvailabilityRepository;
-import com.prayerroster.repository.UserRepository;
 import com.prayerroster.repository.WeeklyPrayerConfigurationRepository;
-import com.prayerroster.scheduling.RosterSolution;
-import com.prayerroster.scheduling.SolverService;
 import com.prayerroster.service.dto.GenerateRosterRequest;
 import com.prayerroster.service.dto.RosterDTO;
 import com.prayerroster.web.rest.errors.BadRequestAlertException;
@@ -55,13 +50,7 @@ class RosterGenerationServiceTest {
     private WeeklyPrayerConfigurationRepository weeklyPrayerConfigurationRepository;
 
     @Mock
-    private UserRepository userRepository;
-
-    @Mock
-    private UserAvailabilityRepository userAvailabilityRepository;
-
-    @Mock
-    private SolverService solverService;
+    private RosterSolvingService rosterSolvingService;
 
     private RosterGenerationService service;
 
@@ -73,9 +62,7 @@ class RosterGenerationServiceTest {
             prayerSessionRepository,
             prayerAssignmentRepository,
             weeklyPrayerConfigurationRepository,
-            userRepository,
-            userAvailabilityRepository,
-            solverService
+            rosterSolvingService
         );
     }
 
@@ -93,15 +80,6 @@ class RosterGenerationServiceTest {
         }
         config.setDays(days);
         return config;
-    }
-
-    private static User testUser(String id) {
-        User user = new User();
-        user.setId(id);
-        user.setActive(true);
-        user.setCanModerate(true);
-        user.setCanPreach(true);
-        return user;
     }
 
     private void stubSaves() {
@@ -126,18 +104,14 @@ class RosterGenerationServiceTest {
             a.setId(assignmentIds.getAndIncrement());
             return a;
         });
-        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
-        when(userAvailabilityRepository.findActiveOverlapping(any(), any())).thenReturn(List.of());
     }
 
-    /** By default, the mocked solve fills every assignment with a fixed user and reports feasible. */
+    /** By default, the mocked solving service marks the roster PUBLISHED and reports feasible. */
     private void stubFeasibleSolve() {
-        when(solverService.solve(any(), any())).thenAnswer(inv -> {
-            RosterSolution problem = inv.getArgument(1);
-            User user = testUser("u1");
-            problem.getAssignments().forEach(a -> a.setUser(user));
-            problem.setScore(HardSoftScore.of(0, -1));
-            return problem;
+        when(rosterSolvingService.solveAndApply(any(), any(), any(), any(), any(), any())).thenAnswer(inv -> {
+            Roster roster = inv.getArgument(0);
+            roster.setStatus(RosterStatus.PUBLISHED);
+            return true;
         });
     }
 
@@ -169,7 +143,7 @@ class RosterGenerationServiceTest {
     }
 
     @Test
-    void generate_createsSessionsWithBothRolesOnPreachingDaysAndModeratorOnlyOtherwiseAndPublishesOnFeasibleSolve() {
+    void generate_createsSessionsWithBothRolesOnPreachingDaysAndModeratorOnlyOtherwiseAndDelegatesSolving() {
         stubSaves();
         stubFeasibleSolve();
         // 2026-09-06 is a Sunday (preaching day), 2026-09-07 a Monday (moderation-only).
@@ -184,6 +158,7 @@ class RosterGenerationServiceTest {
         assertThat(result.status()).isEqualTo(RosterStatus.PUBLISHED);
         assertThat(result.periodFrom()).isEqualTo(request.from());
         assertThat(result.periodTo()).isEqualTo(request.to());
+        verify(rosterSolvingService).solveAndApply(any(), any(), any(), eq(request.from()), eq(request.to()), eq(RosterStatus.DRAFT));
 
         ArgumentCaptor<PrayerSession> captor = ArgumentCaptor.forClass(PrayerSession.class);
         verify(prayerSessionRepository, times(2)).save(captor.capture());
@@ -195,7 +170,6 @@ class RosterGenerationServiceTest {
             PrayerAssignmentRole.MODERATOR,
             PrayerAssignmentRole.PREACHER
         );
-        sunday.getAssignments().forEach(a -> assertThat(a.getUser()).isNotNull());
 
         PrayerSession monday = sessions.stream().filter(s -> s.getDate().getDayOfWeek() == DayOfWeek.MONDAY).findFirst().orElseThrow();
         assertThat(monday.isRequiresPreacher()).isFalse();
@@ -258,14 +232,13 @@ class RosterGenerationServiceTest {
     }
 
     @Test
-    void generate_staysInDraftAndRecordsDiagnosticWhenSolveIsInfeasible() {
+    void generate_reflectsRosterStateWhenSolvingReportsInfeasible() {
         stubSaves();
-        when(solverService.solve(any(), any())).thenAnswer(inv -> {
-            RosterSolution problem = inv.getArgument(1);
-            problem.setScore(HardSoftScore.of(-1, 0));
-            return problem;
+        when(rosterSolvingService.solveAndApply(any(), any(), any(), any(), any(), any())).thenAnswer(inv -> {
+            Roster roster = inv.getArgument(0);
+            roster.setStatus(RosterStatus.DRAFT);
+            return false;
         });
-        when(solverService.explainHardConstraintViolations(any())).thenReturn("everyAssignmentMustBeFilled: 1 violation(s)");
         var request = new GenerateRosterRequest(LocalDate.of(2026, 9, 6), LocalDate.of(2026, 9, 6));
         when(prayerSessionRepository.existsByDateBetween(any(), any())).thenReturn(false);
         when(weeklyPrayerConfigurationRepository.findAllWithDaysOrderByEffectiveFromDesc()).thenReturn(
@@ -276,36 +249,5 @@ class RosterGenerationServiceTest {
 
         assertThat(result.status()).isEqualTo(RosterStatus.DRAFT);
         assertThat(result.publishedAt()).isNull();
-
-        ArgumentCaptor<RosterGeneration> captor = ArgumentCaptor.forClass(RosterGeneration.class);
-        verify(rosterGenerationRepository, times(2)).save(captor.capture());
-        RosterGeneration finalGeneration = captor.getAllValues().get(1);
-        assertThat(finalGeneration.getStatus()).isEqualTo(RosterGenerationStatus.INFEASIBLE);
-        assertThat(finalGeneration.getFeasible()).isFalse();
-        assertThat(finalGeneration.getErrorMessage()).isEqualTo("everyAssignmentMustBeFilled: 1 violation(s)");
-        verify(rosterRepository, never()).save(argThat(r -> r.getStatus() == RosterStatus.PUBLISHED));
-    }
-
-    @Test
-    void generate_skipsSolvingAndStaysInDraftWhenNoEligibleUserExists() {
-        stubSaves();
-        when(userRepository.findAllEligibleActive()).thenReturn(List.of());
-        var request = new GenerateRosterRequest(LocalDate.of(2026, 9, 6), LocalDate.of(2026, 9, 6));
-        when(prayerSessionRepository.existsByDateBetween(any(), any())).thenReturn(false);
-        when(weeklyPrayerConfigurationRepository.findAllWithDaysOrderByEffectiveFromDesc()).thenReturn(
-            List.of(configVersion(LocalDate.of(2026, 1, 1), null, Set.of(DayOfWeek.SUNDAY)))
-        );
-
-        RosterDTO result = service.generate(request);
-
-        assertThat(result.status()).isEqualTo(RosterStatus.DRAFT);
-        verify(solverService, never()).solve(any(), any());
-
-        ArgumentCaptor<RosterGeneration> captor = ArgumentCaptor.forClass(RosterGeneration.class);
-        verify(rosterGenerationRepository, times(2)).save(captor.capture());
-        RosterGeneration finalGeneration = captor.getAllValues().get(1);
-        assertThat(finalGeneration.getStatus()).isEqualTo(RosterGenerationStatus.INFEASIBLE);
-        assertThat(finalGeneration.getHardScore()).isEqualTo(-2);
-        assertThat(finalGeneration.getErrorMessage()).contains("No active user has any capability");
     }
 }

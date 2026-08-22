@@ -11,6 +11,7 @@ import com.prayerroster.web.rest.errors.BadRequestAlertException;
 import com.prayerroster.web.rest.errors.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,10 +31,16 @@ public class UserAvailabilityService {
 
     private final UserAvailabilityRepository availabilityRepository;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public UserAvailabilityService(UserAvailabilityRepository availabilityRepository, UserRepository userRepository) {
+    public UserAvailabilityService(
+        UserAvailabilityRepository availabilityRepository,
+        UserRepository userRepository,
+        ApplicationEventPublisher eventPublisher
+    ) {
         this.availabilityRepository = availabilityRepository;
         this.userRepository = userRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     @Transactional(readOnly = true)
@@ -52,7 +59,9 @@ public class UserAvailabilityService {
         availability.setEndDate(request.endDate());
         availability.setReason(request.reason());
         availability.setStatus(UserAvailabilityStatus.ACTIVE);
-        return UserAvailabilityDTO.from(availabilityRepository.save(availability));
+        UserAvailabilityDTO saved = UserAvailabilityDTO.from(availabilityRepository.save(availability));
+        eventPublisher.publishEvent(new UserAvailabilityChangedEvent(userId, request.startDate(), request.endDate()));
+        return saved;
     }
 
     public UserAvailabilityDTO update(String userId, Long id, AvailabilityRequest request) {
@@ -64,7 +73,9 @@ public class UserAvailabilityService {
         existing.setStartDate(request.startDate());
         existing.setEndDate(request.endDate());
         existing.setReason(request.reason());
-        return UserAvailabilityDTO.from(availabilityRepository.save(existing));
+        UserAvailabilityDTO saved = UserAvailabilityDTO.from(availabilityRepository.save(existing));
+        eventPublisher.publishEvent(new UserAvailabilityChangedEvent(userId, request.startDate(), request.endDate()));
+        return saved;
     }
 
     public void cancel(String userId, Long id) {
