@@ -7,7 +7,11 @@ import com.prayerroster.service.dto.UpdateNotificationPreferenceRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
-/** Self-service notification channel preference - authenticated-only, own data only. */
+/**
+ * Self-service notification channel preference. Deliberately not permission-gated beyond
+ * authentication: every authenticated user manages only their own data here, scoped by the JWT's
+ * sub claim, not by a business permission - see docs/phase1-architecture.md's authorization model.
+ */
 @RestController
 @RequestMapping("/api/me/notification-preference")
 public class MeNotificationPreferenceResource {

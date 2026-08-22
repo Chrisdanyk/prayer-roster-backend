@@ -59,6 +59,10 @@ public class RosterGenerationService {
     }
 
     public RosterDTO generate(GenerateRosterRequest request) {
+        return generate(request, RosterGenerationTrigger.MANUAL);
+    }
+
+    public RosterDTO generate(GenerateRosterRequest request, RosterGenerationTrigger trigger) {
         LocalDate from = request.from();
         LocalDate to = request.to();
         if (from.isAfter(to)) {
@@ -84,7 +88,7 @@ public class RosterGenerationService {
 
         RosterGeneration generation = new RosterGeneration();
         generation.setRoster(roster);
-        generation.setTrigger(RosterGenerationTrigger.MANUAL);
+        generation.setTrigger(trigger);
         generation.setPlanningFrom(from);
         generation.setPlanningTo(to);
         generation.setStatus(RosterGenerationStatus.RUNNING);
