@@ -1,17 +1,22 @@
 package com.prayerroster.web.rest;
 
+import com.prayerroster.repository.UserRepository;
+import com.prayerroster.security.SecurityUtils;
 import com.prayerroster.service.ReschedulingService;
 import com.prayerroster.service.RosterGenerationService;
+import com.prayerroster.service.RosterPdfService;
 import com.prayerroster.service.RosterService;
 import com.prayerroster.service.dto.GenerateRosterRequest;
 import com.prayerroster.service.dto.RescheduleRequest;
 import com.prayerroster.service.dto.RosterDTO;
 import jakarta.validation.Valid;
 import java.util.List;
+import java.util.Locale;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
@@ -22,14 +27,26 @@ import tech.jhipster.web.util.PaginationUtil;
 @RequestMapping("/api/rosters")
 public class RosterResource {
 
+    private static final Locale DEFAULT_LOCALE = Locale.forLanguageTag("fr");
+
     private final RosterGenerationService rosterGenerationService;
     private final RosterService rosterService;
     private final ReschedulingService reschedulingService;
+    private final RosterPdfService rosterPdfService;
+    private final UserRepository userRepository;
 
-    public RosterResource(RosterGenerationService rosterGenerationService, RosterService rosterService, ReschedulingService reschedulingService) {
+    public RosterResource(
+        RosterGenerationService rosterGenerationService,
+        RosterService rosterService,
+        ReschedulingService reschedulingService,
+        RosterPdfService rosterPdfService,
+        UserRepository userRepository
+    ) {
         this.rosterGenerationService = rosterGenerationService;
         this.rosterService = rosterService;
         this.reschedulingService = reschedulingService;
+        this.rosterPdfService = rosterPdfService;
+        this.userRepository = userRepository;
     }
 
     @PostMapping("/generate")
@@ -57,5 +74,22 @@ public class RosterResource {
     @PreAuthorize("hasAuthority('PERM_ROSTER_VIEW')")
     public RosterDTO getRoster(@PathVariable Long id) {
         return rosterService.findOne(id);
+    }
+
+    @GetMapping("/{id}/pdf")
+    @PreAuthorize("hasAuthority('PERM_ROSTER_VIEW')")
+    public ResponseEntity<byte[]> getRosterPdf(@PathVariable Long id) {
+        byte[] pdf = rosterPdfService.renderRosterPdf(id, currentLocale());
+        return ResponseEntity.ok()
+            .contentType(MediaType.APPLICATION_PDF)
+            .header(HttpHeaders.CONTENT_DISPOSITION, "inline; filename=\"roster-" + id + ".pdf\"")
+            .body(pdf);
+    }
+
+    private Locale currentLocale() {
+        return SecurityUtils.getCurrentUserLogin()
+            .flatMap(userRepository::findById)
+            .map(user -> Locale.forLanguageTag(user.getLangKey()))
+            .orElse(DEFAULT_LOCALE);
     }
 }

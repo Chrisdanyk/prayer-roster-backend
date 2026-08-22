@@ -67,6 +67,7 @@
         <profile.tls/>
         <properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
         <resource.delimiter>@</resource.delimiter>
+        <openhtmltopdf.version>1.0.10</openhtmltopdf.version>
         <shedlock.version>6.6.0</shedlock.version>
         <sonar-maven-plugin.version>5.1.0.4751</sonar-maven-plugin.version>
         <spotless-maven-plugin.version>2.44.4</spotless-maven-plugin.version>
@@ -148,6 +149,20 @@
             <groupId>net.javacrumbs.shedlock</groupId>
             <artifactId>shedlock-provider-jdbc-template</artifactId>
             <version>${shedlock.version}</version>
+        </dependency>
+        <!--
+          Renders the Thymeleaf-templated roster/calendar PDFs (see docs/phase1-architecture.md
+          section 13) - Apache-2.0 licensed, unlike iText's AGPL/commercial dual licensing.
+        -->
+        <dependency>
+            <groupId>com.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-core</artifactId>
+            <version>${openhtmltopdf.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>com.openhtmltopdf</groupId>
+            <artifactId>openhtmltopdf-pdfbox</artifactId>
+            <version>${openhtmltopdf.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>
