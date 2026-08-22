@@ -175,6 +175,10 @@ server:
 
 springdoc:
   show-actuator: true
+  swagger-ui:
+    # Keeps a bearer token entered via "Authorize" in the browser's own storage, so a dev doesn't
+    # have to re-paste it after every page reload.
+    persist-authorization: true
 
 timefold:
   solver:
