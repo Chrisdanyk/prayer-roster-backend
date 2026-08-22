@@ -1,0 +1,21 @@
+{
+  "generator-jhipster": {
+    "applicationType": "monolith",
+    "authenticationType": "oauth2",
+    "baseName": "prayerRosterBackend",
+    "buildTool": "maven",
+    "cacheProvider": "no",
+    "creationTimestamp": 1787395354700,
+    "devDatabaseType": "postgresql",
+    "entities": [],
+    "jhipsterVersion": "8.11.0",
+    "languages": ["fr", "en"],
+    "messageBroker": "no",
+    "nativeLanguage": "fr",
+    "packageName": "com.prayerroster",
+    "searchEngine": "no",
+    "serviceDiscoveryType": "no",
+    "skipClient": true,
+    "skipUserManagement": true
+  }
+}
