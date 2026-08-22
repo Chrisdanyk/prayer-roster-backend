@@ -3,6 +3,7 @@
   { "code": "USER_CREATE", "description": "Créer un utilisateur" },
   { "code": "USER_UPDATE", "description": "Modifier un utilisateur" },
   { "code": "USER_DELETE", "description": "Supprimer un utilisateur" },
+  { "code": "USER_ROLE_ASSIGN", "description": "Attribuer un rôle à un utilisateur" },
 
   { "code": "ROLE_VIEW", "description": "Consulter les rôles" },
   { "code": "ROLE_CREATE", "description": "Créer un rôle" },

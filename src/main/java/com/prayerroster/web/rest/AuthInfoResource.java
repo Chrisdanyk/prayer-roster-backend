@@ -37,16 +37,8 @@ public class AuthInfoResource {
             return this.issuer;
         }
 
-        public void setIssuer(String issuer) {
-            this.issuer = issuer;
-        }
-
         public String getClientId() {
             return clientId;
-        }
-
-        public void setClientId(String clientId) {
-            this.clientId = clientId;
         }
     }
 }

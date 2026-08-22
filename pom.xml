@@ -694,6 +694,30 @@
                     <groupId>org.jacoco</groupId>
                     <artifactId>jacoco-maven-plugin</artifactId>
                     <version>${jacoco-maven-plugin.version}</version>
+                    <configuration>
+                        <!--
+                          Plugin-level excludes (class-file globs, not the rule-level excludes
+                          below) - a jacoco-maven-plugin quirk means <rule><excludes> under an
+                          element=BUNDLE rule does NOT filter the bundle-wide ratio the coverage
+                          gate checks, only per-class rules. These filter at analysis time instead,
+                          which does work for BUNDLE. Kept in sync with the rule-level excludes.
+                        -->
+                        <excludes>
+                            <exclude>com/prayerroster/*App.class</exclude>
+                            <exclude>com/prayerroster/ApplicationWebXml.class</exclude>
+                            <exclude>com/prayerroster/GeneratedByJHipster.class</exclude>
+                            <exclude>com/prayerroster/aop/**</exclude>
+                            <exclude>com/prayerroster/config/**</exclude>
+                            <exclude>com/prayerroster/domain/**</exclude>
+                            <exclude>com/prayerroster/repository/**</exclude>
+                            <exclude>com/prayerroster/security/AuthoritiesConstants.class</exclude>
+                            <exclude>com/prayerroster/security/RoleNames.class</exclude>
+                            <exclude>com/prayerroster/service/dto/**</exclude>
+                            <exclude>com/prayerroster/service/mapper/*MapperImpl.class</exclude>
+                            <exclude>com/prayerroster/web/rest/errors/**</exclude>
+                            <exclude>com/prayerroster/web/rest/vm/**</exclude>
+                        </excludes>
+                    </configuration>
                     <executions>
                         <execution>
                             <id>pre-unit-tests</id>

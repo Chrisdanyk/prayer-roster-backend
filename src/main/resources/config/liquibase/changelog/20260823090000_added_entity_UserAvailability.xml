@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260823090000-1" author="prayer-roster">
+        <createTable tableName="user_availability">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="start_date" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="end_date" type="date">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reason" type="varchar(500)"/>
+            <column name="status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="user_availability"
+            baseColumnNames="user_id"
+            constraintName="fk_user_availability_user_id"
+            referencedTableName="app_user"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <createIndex tableName="user_availability" indexName="ix_user_availability_user_id_start_date">
+            <column name="user_id"/>
+            <column name="start_date"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>
