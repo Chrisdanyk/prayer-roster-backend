@@ -48,7 +48,7 @@ class RbacSeedServiceTest {
         service.seedPermissionCatalog();
 
         ArgumentCaptor<Permission> captor = ArgumentCaptor.forClass(Permission.class);
-        verify(permissionRepository, times(23)).save(captor.capture());
+        verify(permissionRepository, times(25)).save(captor.capture());
         assertThat(captor.getAllValues()).extracting(Permission::getCode).contains(
             "USER_VIEW",
             "ROLE_DELETE",
@@ -58,7 +58,9 @@ class RbacSeedServiceTest {
             "ROSTER_PUBLISH",
             "ROSTER_RESCHEDULE",
             "AVAILABILITY_MANAGE",
-            "NOTIFICATION_VIEW"
+            "NOTIFICATION_VIEW",
+            "REMINDER_CONFIG_VIEW",
+            "REMINDER_CONFIG_UPDATE"
         );
     }
 

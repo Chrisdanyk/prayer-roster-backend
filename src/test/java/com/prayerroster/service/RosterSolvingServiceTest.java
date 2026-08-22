@@ -5,6 +5,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import ai.timefold.solver.core.api.score.buildin.hardsoft.HardSoftScore;
@@ -48,11 +49,21 @@ class RosterSolvingServiceTest {
     @Mock
     private SolverService solverService;
 
+    @Mock
+    private NotificationService notificationService;
+
     private RosterSolvingService service;
 
     @BeforeEach
     void setUp() {
-        service = new RosterSolvingService(rosterRepository, rosterGenerationRepository, userRepository, userAvailabilityRepository, solverService);
+        service = new RosterSolvingService(
+            rosterRepository,
+            rosterGenerationRepository,
+            userRepository,
+            userAvailabilityRepository,
+            solverService,
+            notificationService
+        );
         when(userAvailabilityRepository.findActiveOverlapping(any(), any())).thenReturn(List.of());
     }
 
@@ -65,10 +76,11 @@ class RosterSolvingServiceTest {
         return user;
     }
 
-    private static PrayerAssignment assignment(Long id) {
+    private static PrayerAssignment assignment(Long id, User initialUser) {
         PrayerAssignment assignment = new PrayerAssignment();
         assignment.setId(id);
         assignment.setRole(PrayerAssignmentRole.MODERATOR);
+        assignment.setUser(initialUser);
         PrayerSession session = new PrayerSession();
         session.setId(id);
         session.setDate(LocalDate.of(2026, 9, 6));
@@ -91,19 +103,38 @@ class RosterSolvingServiceTest {
         return generation;
     }
 
+    /**
+     * Real Timefold returns a clone of each planning entity from {@code getFinalBestSolution()} -
+     * decoupled from the originals passed into the solve, which is exactly what lets {@code
+     * RosterSolvingService} safely read an assignment's pre-solve {@code user} before overwriting
+     * it. Mutating the original objects directly (instead of returning clones, as a naive mock
+     * might) would corrupt that "previous vs. new" comparison - this helper avoids that trap.
+     */
+    private static PrayerAssignment solvedClone(PrayerAssignment original, User solvedUser) {
+        PrayerAssignment clone = new PrayerAssignment();
+        clone.setId(original.getId());
+        clone.setRole(original.getRole());
+        clone.setSession(original.getSession());
+        clone.setUser(solvedUser);
+        return clone;
+    }
+
     @Test
     void solveAndApply_publishesRosterAndFillsAssignmentsWhenFeasible() {
         when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
-        PrayerAssignment managed = assignment(1L);
+        PrayerAssignment managed = assignment(1L, null);
         RosterGeneration generation = generation();
         Roster roster = roster();
 
         when(solverService.solve(eq(generation.getId()), any())).thenAnswer(inv -> {
             RosterSolution problem = inv.getArgument(1);
-            User solvedUser = testUser("u1");
-            problem.getAssignments().forEach(a -> a.setUser(solvedUser));
-            problem.setScore(HardSoftScore.of(0, -3));
-            return problem;
+            RosterSolution solved = new RosterSolution(
+                problem.getEligibleUsers(),
+                problem.getUnavailabilities(),
+                List.of(solvedClone(managed, testUser("u1")))
+            );
+            solved.setScore(HardSoftScore.of(0, -3));
+            return solved;
         });
 
         boolean feasible = service.solveAndApply(
@@ -128,6 +159,80 @@ class RosterSolvingServiceTest {
     }
 
     @Test
+    void solveAndApply_notifiesOnlyTheNewlyAssignedUserWhenSlotWasPreviouslyEmpty() {
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
+        PrayerAssignment managed = assignment(1L, null);
+        RosterGeneration generation = generation();
+        Roster roster = roster();
+
+        when(solverService.solve(eq(generation.getId()), any())).thenAnswer(inv -> {
+            RosterSolution problem = inv.getArgument(1);
+            RosterSolution solved = new RosterSolution(
+                problem.getEligibleUsers(),
+                problem.getUnavailabilities(),
+                List.of(solvedClone(managed, testUser("u1")))
+            );
+            solved.setScore(HardSoftScore.of(0, 0));
+            return solved;
+        });
+
+        service.solveAndApply(roster, generation, List.of(managed), roster.getPeriodFrom(), roster.getPeriodTo(), RosterStatus.DRAFT);
+
+        verify(notificationService).notifyAssignmentPublished(managed);
+        verify(notificationService, never()).notifyAssignmentRemoved(any(), any());
+    }
+
+    @Test
+    void solveAndApply_notifiesBothUsersWhenReassignedToADifferentUser() {
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1"), testUser("u2")));
+        User previousUser = testUser("u1");
+        PrayerAssignment managed = assignment(1L, previousUser);
+        RosterGeneration generation = generation();
+        Roster roster = roster();
+
+        when(solverService.solve(eq(generation.getId()), any())).thenAnswer(inv -> {
+            RosterSolution problem = inv.getArgument(1);
+            RosterSolution solved = new RosterSolution(
+                problem.getEligibleUsers(),
+                problem.getUnavailabilities(),
+                List.of(solvedClone(managed, testUser("u2")))
+            );
+            solved.setScore(HardSoftScore.of(0, 0));
+            return solved;
+        });
+
+        service.solveAndApply(roster, generation, List.of(managed), roster.getPeriodFrom(), roster.getPeriodTo(), RosterStatus.DRAFT);
+
+        verify(notificationService).notifyAssignmentRemoved(eq(previousUser), eq(managed));
+        verify(notificationService).notifyAssignmentPublished(managed);
+        assertThat(managed.getUser().getId()).isEqualTo("u2");
+    }
+
+    @Test
+    void solveAndApply_doesNotNotifyWhenAssignmentIsUnchanged() {
+        User sameUser = testUser("u1");
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(sameUser));
+        PrayerAssignment managed = assignment(1L, sameUser);
+        RosterGeneration generation = generation();
+        Roster roster = roster();
+
+        when(solverService.solve(eq(generation.getId()), any())).thenAnswer(inv -> {
+            RosterSolution problem = inv.getArgument(1);
+            RosterSolution solved = new RosterSolution(
+                problem.getEligibleUsers(),
+                problem.getUnavailabilities(),
+                List.of(solvedClone(managed, sameUser))
+            );
+            solved.setScore(HardSoftScore.of(0, 0));
+            return solved;
+        });
+
+        service.solveAndApply(roster, generation, List.of(managed), roster.getPeriodFrom(), roster.getPeriodTo(), RosterStatus.DRAFT);
+
+        verifyNoInteractions(notificationService);
+    }
+
+    @Test
     void solveAndApply_fallsBackToGivenStatusAndRecordsDiagnosticWhenInfeasible() {
         when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
         RosterGeneration generation = generation();
@@ -144,7 +249,7 @@ class RosterSolvingServiceTest {
         boolean feasible = service.solveAndApply(
             roster,
             generation,
-            List.of(assignment(1L)),
+            List.of(assignment(1L, null)),
             roster.getPeriodFrom(),
             roster.getPeriodTo(),
             RosterStatus.REQUIRES_RESCHEDULING
@@ -155,6 +260,7 @@ class RosterSolvingServiceTest {
         assertThat(generation.getStatus()).isEqualTo(RosterGenerationStatus.INFEASIBLE);
         assertThat(generation.getFeasible()).isFalse();
         assertThat(generation.getErrorMessage()).isEqualTo("everyAssignmentMustBeFilled: 2 violation(s)");
+        verifyNoInteractions(notificationService);
     }
 
     @Test
@@ -166,7 +272,7 @@ class RosterSolvingServiceTest {
         boolean feasible = service.solveAndApply(
             roster,
             generation,
-            List.of(assignment(1L), assignment(2L)),
+            List.of(assignment(1L, null), assignment(2L, null)),
             roster.getPeriodFrom(),
             roster.getPeriodTo(),
             RosterStatus.DRAFT
@@ -177,5 +283,6 @@ class RosterSolvingServiceTest {
         assertThat(generation.getSolverDurationMs()).isZero();
         assertThat(generation.getErrorMessage()).contains("No active user has any capability");
         verify(solverService, never()).solve(any(), any());
+        verifyNoInteractions(notificationService);
     }
 }

@@ -43,7 +43,9 @@ public class RbacSeedService implements ApplicationRunner {
         "ROSTER_PUBLISH",
         "ROSTER_RESCHEDULE",
         "AVAILABILITY_VIEW",
-        "NOTIFICATION_VIEW"
+        "NOTIFICATION_VIEW",
+        "REMINDER_CONFIG_VIEW",
+        "REMINDER_CONFIG_UPDATE"
     );
 
     private final PermissionRepository permissionRepository;

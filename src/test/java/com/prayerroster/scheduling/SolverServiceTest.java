@@ -214,11 +214,15 @@ class SolverServiceTest {
 
     /**
      * A deliberately broken provider so {@link SolverService#solve} sees a genuine solve-time
-     * failure. Timefold needs a publicly no-arg-constructible class here, which unavoidably makes
-     * it visible to Spring's classpath component scan too - a future full-context
-     * ({@code @SpringBootTest}) test in this package tree will see two {@code ConstraintProvider}s
-     * on the classpath and fail to boot with an ambiguity error unless that test explicitly pins
-     * {@code timefold.solver.constraint-provider-class} to {@link RosterConstraintProvider}.
+     * failure, wired directly into a hand-built {@link SolverConfig} via
+     * {@code withConstraintProviderClass} - it is never meant to be independently discoverable.
+     * However, Timefold's Spring Boot starter performs an eager, unconditional classpath scan for
+     * every {@code ConstraintProvider} implementation as part of its own diagnostics, and refuses to
+     * boot if it finds more than one - even with an explicit {@code solverConfig.xml} pinning
+     * {@link RosterConstraintProvider}. A full-context ({@code @SpringBootTest}) test can never
+     * safely share a classpath with this class as a result; live/manual verification of the solver
+     * pipeline must run against the packaged application (test sources excluded), never a
+     * `@SpringBootTest`.
      */
     public static class ThrowingConstraintProvider implements ConstraintProvider {
 

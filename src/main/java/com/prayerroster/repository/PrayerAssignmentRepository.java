@@ -25,4 +25,16 @@ public interface PrayerAssignmentRepository extends JpaRepository<PrayerAssignme
         @Param("from") LocalDate from,
         @Param("to") LocalDate to
     );
+
+    /**
+     * Every filled assignment on a published roster for one specific date - the candidate set for
+     * {@link com.prayerroster.service.ReminderService}'s daily sweep. Join-fetched with session and
+     * user in one query so building reminder notifications never N+1s.
+     */
+    @Query(
+        "select distinct a from PrayerAssignment a " +
+        "join fetch a.session s join fetch a.user " +
+        "where s.date = :date and s.roster.status = com.prayerroster.domain.RosterStatus.PUBLISHED"
+    )
+    List<PrayerAssignment> findPublishedAssignmentsForDate(@Param("date") LocalDate date);
 }

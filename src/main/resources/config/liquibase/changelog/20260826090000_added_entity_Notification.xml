@@ -1,0 +1,183 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260826090000-1" author="prayer-roster">
+        <createTable tableName="notification">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="recipient_id" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="type" type="varchar(30)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="message_key" type="varchar(100)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="params" type="text"/>
+            <column name="related_session_id" type="bigint"/>
+            <column name="related_assignment_id" type="bigint"/>
+            <column name="is_read" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="read_at" type="${datetimeType}"/>
+            <column name="email_status" type="varchar(20)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="email_sent_at" type="${datetimeType}"/>
+            <column name="retry_count" type="integer" defaultValueNumeric="0">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="notification"
+            baseColumnNames="recipient_id"
+            constraintName="fk_notification_recipient_id"
+            referencedTableName="app_user"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <addForeignKeyConstraint
+            baseTableName="notification"
+            baseColumnNames="related_session_id"
+            constraintName="fk_notification_related_session_id"
+            referencedTableName="prayer_session"
+            referencedColumnNames="id"
+            onDelete="SET NULL"
+        />
+        <addForeignKeyConstraint
+            baseTableName="notification"
+            baseColumnNames="related_assignment_id"
+            constraintName="fk_notification_related_assignment_id"
+            referencedTableName="prayer_assignment"
+            referencedColumnNames="id"
+            onDelete="SET NULL"
+        />
+        <createIndex tableName="notification" indexName="ix_notification_recipient_id_is_read">
+            <column name="recipient_id"/>
+            <column name="is_read"/>
+        </createIndex>
+        <createIndex tableName="notification" indexName="ix_notification_email_status">
+            <column name="email_status"/>
+        </createIndex>
+    </changeSet>
+
+    <changeSet id="20260826090000-2" author="prayer-roster">
+        <createTable tableName="notification_preference">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="user_id" type="varchar(100)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_notification_preference_user_id"/>
+            </column>
+            <column name="email_enabled" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="notification_preference"
+            baseColumnNames="user_id"
+            constraintName="fk_notification_preference_user_id"
+            referencedTableName="app_user"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+    </changeSet>
+
+    <changeSet id="20260826090000-3" author="prayer-roster">
+        <createTable tableName="reminder_configuration">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="days_before" type="integer">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_reminder_configuration_days_before"/>
+            </column>
+            <column name="active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="20260826090000-4" author="prayer-roster">
+        <createTable tableName="reminder_sent">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="assignment_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="reminder_configuration_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="sent_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="reminder_sent"
+            baseColumnNames="assignment_id"
+            constraintName="fk_reminder_sent_assignment_id"
+            referencedTableName="prayer_assignment"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <addForeignKeyConstraint
+            baseTableName="reminder_sent"
+            baseColumnNames="reminder_configuration_id"
+            constraintName="fk_reminder_sent_reminder_configuration_id"
+            referencedTableName="reminder_configuration"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <addUniqueConstraint
+            tableName="reminder_sent"
+            columnNames="assignment_id, reminder_configuration_id"
+            constraintName="ux_reminder_sent_assignment_id_reminder_configuration_id"
+        />
+    </changeSet>
+
+    <changeSet id="20260826090000-5" author="prayer-roster">
+        <createTable tableName="shedlock">
+            <column name="name" type="varchar(64)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="lock_until" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="locked_at" type="${datetimeType}">
+                <constraints nullable="false"/>
+            </column>
+            <column name="locked_by" type="varchar(255)">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+    </changeSet>
+</databaseChangeLog>

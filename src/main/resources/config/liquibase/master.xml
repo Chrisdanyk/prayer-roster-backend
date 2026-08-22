@@ -18,6 +18,7 @@
     <include file="config/liquibase/changelog/20260823090000_added_entity_UserAvailability.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260824080000_added_entity_WeeklyPrayerConfiguration.xml" relativeToChangelogFile="false"/>
     <include file="config/liquibase/changelog/20260825070000_added_entity_Roster.xml" relativeToChangelogFile="false"/>
+    <include file="config/liquibase/changelog/20260826090000_added_entity_Notification.xml" relativeToChangelogFile="false"/>
     <!-- jhipster-needle-liquibase-add-changelog - JHipster will add liquibase changelogs here -->
     <!-- jhipster-needle-liquibase-add-constraints-changelog - JHipster will add liquibase constraints changelogs here -->
     <!-- jhipster-needle-liquibase-add-incremental-changelog - JHipster will add incremental liquibase changelogs here -->

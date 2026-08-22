@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Explicit solver configuration, in place of Timefold's default classpath-wide auto-detection of a
+  single ConstraintProvider implementation: a full-context (@SpringBootTest) test also puts
+  src/test/java on the classpath, where SolverServiceTest deliberately defines a second
+  ConstraintProvider (ThrowingConstraintProvider, used to exercise a solve-time failure) to build its
+  own standalone SolverConfig - auto-detection would then see two implementations and refuse to boot.
+  Pinning the real one here removes the ambiguity outright, for every context, permanently - and
+  matches the "explicit over magic" bar the rest of this codebase holds to.
+-->
+<solver xmlns="https://timefold.ai/xsd/solver" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="https://timefold.ai/xsd/solver https://timefold.ai/xsd/solver/solver.xsd">
+    <solutionClass>com.prayerroster.scheduling.RosterSolution</solutionClass>
+    <entityClass>com.prayerroster.domain.PrayerAssignment</entityClass>
+    <scoreDirectorFactory>
+        <constraintProviderClass>com.prayerroster.scheduling.RosterConstraintProvider</constraintProviderClass>
+    </scoreDirectorFactory>
+</solver>

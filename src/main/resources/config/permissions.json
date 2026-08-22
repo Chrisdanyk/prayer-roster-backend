@@ -27,5 +27,8 @@
   { "code": "AVAILABILITY_VIEW", "description": "Consulter les indisponibilités" },
   { "code": "AVAILABILITY_MANAGE", "description": "Gérer les indisponibilités des utilisateurs" },
 
-  { "code": "NOTIFICATION_VIEW", "description": "Consulter les notifications" }
+  { "code": "NOTIFICATION_VIEW", "description": "Consulter les notifications" },
+
+  { "code": "REMINDER_CONFIG_VIEW", "description": "Consulter la configuration des rappels" },
+  { "code": "REMINDER_CONFIG_UPDATE", "description": "Modifier la configuration des rappels" }
 ]

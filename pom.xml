@@ -67,6 +67,7 @@
         <profile.tls/>
         <properties-maven-plugin.version>1.2.1</properties-maven-plugin.version>
         <resource.delimiter>@</resource.delimiter>
+        <shedlock.version>6.6.0</shedlock.version>
         <sonar-maven-plugin.version>5.1.0.4751</sonar-maven-plugin.version>
         <spotless-maven-plugin.version>2.44.4</spotless-maven-plugin.version>
         <spring.profiles.active>dev</spring.profiles.active>
@@ -131,6 +132,22 @@
             <artifactId>timefold-solver-test</artifactId>
             <version>${timefold-solver.version}</version>
             <scope>test</scope>
+        </dependency>
+        <!--
+          Guards the reminder sweep and the notification-email retry sweep against double-firing if
+          this app ever runs more than one instance - see docs/phase1-architecture.md section 13.
+          The ReminderSent unique constraint is the real correctness guarantee even without this;
+          ShedLock just avoids wasted duplicate work across instances.
+        -->
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-spring</artifactId>
+            <version>${shedlock.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>net.javacrumbs.shedlock</groupId>
+            <artifactId>shedlock-provider-jdbc-template</artifactId>
+            <version>${shedlock.version}</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

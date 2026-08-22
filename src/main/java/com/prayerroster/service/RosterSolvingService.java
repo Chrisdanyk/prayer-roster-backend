@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
@@ -29,6 +30,12 @@ import org.springframework.stereotype.Service;
  * {@link RosterStatus} the roster falls back to when the solve is infeasible: {@code DRAFT} for a
  * brand-new roster that was never published, {@code REQUIRES_RESCHEDULING} for one that was already
  * live and still needs attention.
+ * <p>
+ * On a feasible solve, every assignment whose {@code user} actually changed (a fresh fill from
+ * initial generation, or a reassignment from rescheduling) triggers a notification: the newly
+ * assigned user is told, and - if a different user previously held that slot - so is the person
+ * who lost it (see docs/phase1-architecture.md section 13). Unaffected, pinned assignments never
+ * generate noise.
  */
 @Service
 public class RosterSolvingService {
@@ -38,19 +45,22 @@ public class RosterSolvingService {
     private final UserRepository userRepository;
     private final UserAvailabilityRepository userAvailabilityRepository;
     private final SolverService solverService;
+    private final NotificationService notificationService;
 
     public RosterSolvingService(
         RosterRepository rosterRepository,
         RosterGenerationRepository rosterGenerationRepository,
         UserRepository userRepository,
         UserAvailabilityRepository userAvailabilityRepository,
-        SolverService solverService
+        SolverService solverService,
+        NotificationService notificationService
     ) {
         this.rosterRepository = rosterRepository;
         this.rosterGenerationRepository = rosterGenerationRepository;
         this.userRepository = userRepository;
         this.userAvailabilityRepository = userAvailabilityRepository;
         this.solverService = solverService;
+        this.notificationService = notificationService;
     }
 
     /**
@@ -104,7 +114,18 @@ public class RosterSolvingService {
                 .stream()
                 .collect(Collectors.toMap(PrayerAssignment::getId, Function.identity()));
             for (PrayerAssignment managed : assignments) {
-                managed.setUser(solvedById.get(managed.getId()).getUser());
+                User previousUser = managed.getUser();
+                // A feasible solve (hardScore == 0) mathematically guarantees newUser is never null
+                // here: everyAssignmentMustBeFilled contributes a hard violation for every unfilled
+                // assignment, so hardScore couldn't be zero if one existed.
+                User newUser = solvedById.get(managed.getId()).getUser();
+                if (!Objects.equals(previousUser, newUser)) {
+                    managed.setUser(newUser);
+                    if (previousUser != null) {
+                        notificationService.notifyAssignmentRemoved(previousUser, managed);
+                    }
+                    notificationService.notifyAssignmentPublished(managed);
+                }
             }
             generation.setStatus(RosterGenerationStatus.COMPLETED);
             roster.setStatus(RosterStatus.PUBLISHED);
