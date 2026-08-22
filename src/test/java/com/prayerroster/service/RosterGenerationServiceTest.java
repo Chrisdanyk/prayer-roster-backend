@@ -232,6 +232,40 @@ class RosterGenerationServiceTest {
     }
 
     @Test
+    void generate_singleArgOverloadDefaultsTriggerToManual() {
+        stubSaves();
+        stubFeasibleSolve();
+        var request = new GenerateRosterRequest(LocalDate.of(2026, 9, 6), LocalDate.of(2026, 9, 6));
+        when(prayerSessionRepository.existsByDateBetween(any(), any())).thenReturn(false);
+        when(weeklyPrayerConfigurationRepository.findAllWithDaysOrderByEffectiveFromDesc()).thenReturn(
+            List.of(configVersion(LocalDate.of(2026, 1, 1), null, Set.of(DayOfWeek.SUNDAY)))
+        );
+
+        service.generate(request);
+
+        ArgumentCaptor<RosterGeneration> captor = ArgumentCaptor.forClass(RosterGeneration.class);
+        verify(rosterGenerationRepository).save(captor.capture());
+        assertThat(captor.getValue().getTrigger()).isEqualTo(RosterGenerationTrigger.MANUAL);
+    }
+
+    @Test
+    void generate_withExplicitTriggerSetsItOnTheGeneration() {
+        stubSaves();
+        stubFeasibleSolve();
+        var request = new GenerateRosterRequest(LocalDate.of(2026, 9, 6), LocalDate.of(2026, 9, 6));
+        when(prayerSessionRepository.existsByDateBetween(any(), any())).thenReturn(false);
+        when(weeklyPrayerConfigurationRepository.findAllWithDaysOrderByEffectiveFromDesc()).thenReturn(
+            List.of(configVersion(LocalDate.of(2026, 1, 1), null, Set.of(DayOfWeek.SUNDAY)))
+        );
+
+        service.generate(request, RosterGenerationTrigger.SCHEDULED_CRON);
+
+        ArgumentCaptor<RosterGeneration> captor = ArgumentCaptor.forClass(RosterGeneration.class);
+        verify(rosterGenerationRepository).save(captor.capture());
+        assertThat(captor.getValue().getTrigger()).isEqualTo(RosterGenerationTrigger.SCHEDULED_CRON);
+    }
+
+    @Test
     void generate_reflectsRosterStateWhenSolvingReportsInfeasible() {
         stubSaves();
         when(rosterSolvingService.solveAndApply(any(), any(), any(), any(), any(), any())).thenAnswer(inv -> {
