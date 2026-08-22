@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260822100200-1" author="prayer-roster">
+        <createTable tableName="app_user">
+            <column name="id" type="varchar(100)">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="email" type="varchar(254)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_app_user_email"/>
+            </column>
+            <column name="first_name" type="varchar(100)"/>
+            <column name="last_name" type="varchar(100)"/>
+            <column name="active" type="boolean" defaultValueBoolean="true">
+                <constraints nullable="false"/>
+            </column>
+            <column name="can_moderate" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="can_preach" type="boolean" defaultValueBoolean="false">
+                <constraints nullable="false"/>
+            </column>
+            <column name="lang_key" type="varchar(10)" defaultValue="fr">
+                <constraints nullable="false"/>
+            </column>
+            <column name="role_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+        <addForeignKeyConstraint
+            baseTableName="app_user"
+            baseColumnNames="role_id"
+            constraintName="fk_app_user_role_id"
+            referencedTableName="app_role"
+            referencedColumnNames="id"
+        />
+        <createIndex tableName="app_user" indexName="ix_app_user_role_id">
+            <column name="role_id"/>
+        </createIndex>
+    </changeSet>
+</databaseChangeLog>

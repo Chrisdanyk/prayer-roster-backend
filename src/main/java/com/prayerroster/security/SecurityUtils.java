@@ -1,23 +1,17 @@
 package com.prayerroster.security;
 
 import com.prayerroster.config.Constants;
-import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Collection;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.oauth2.core.oidc.StandardClaimNames;
-import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /**
@@ -25,12 +19,11 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
  */
 public final class SecurityUtils {
 
-    public static final String CLAIMS_NAMESPACE = "https://www.jhipster.tech/";
-
     private SecurityUtils() {}
 
     /**
-     * Get the login of the current user.
+     * Get the login of the current user - the Google {@code sub} claim for a JWT-authenticated
+     * request, since this backend is a stateless resource server (see SecurityConfiguration).
      *
      * @return the login of the current user.
      */
@@ -45,12 +38,8 @@ public final class SecurityUtils {
         } else if (authentication.getPrincipal() instanceof UserDetails springSecurityUser) {
             return springSecurityUser.getUsername();
         } else if (authentication instanceof JwtAuthenticationToken) {
-            return (String) ((JwtAuthenticationToken) authentication).getToken().getClaims().get("preferred_username");
-        } else if (authentication.getPrincipal() instanceof DefaultOidcUser) {
-            Map<String, Object> attributes = ((DefaultOidcUser) authentication.getPrincipal()).getAttributes();
-            if (attributes.containsKey("preferred_username")) {
-                return (String) attributes.get("preferred_username");
-            }
+            // getName() is the principal name DynamicJwtAuthenticationConverter set - the sub claim.
+            return authentication.getName();
         } else if (authentication.getPrincipal() instanceof String s) {
             return s;
         }
@@ -100,27 +89,13 @@ public final class SecurityUtils {
         return hasCurrentUserAnyOfAuthorities(authority);
     }
 
+    /**
+     * The authorities actually granted to this authentication - populated by
+     * DynamicJwtAuthenticationConverter from our own Role/Permission graph for a JWT-authenticated
+     * request, never re-derived from token claims (Google's ID tokens carry no authorization data).
+     */
     private static Stream<String> getAuthorities(Authentication authentication) {
-        Collection<? extends GrantedAuthority> authorities = authentication instanceof JwtAuthenticationToken
-            ? extractAuthorityFromClaims(((JwtAuthenticationToken) authentication).getToken().getClaims())
-            : authentication.getAuthorities();
-        return authorities.stream().map(GrantedAuthority::getAuthority);
-    }
-
-    public static List<GrantedAuthority> extractAuthorityFromClaims(Map<String, Object> claims) {
-        return mapRolesToGrantedAuthorities(getRolesFromClaims(claims));
-    }
-
-    @SuppressWarnings("unchecked")
-    private static Collection<String> getRolesFromClaims(Map<String, Object> claims) {
-        return (Collection<String>) claims.getOrDefault(
-            "groups",
-            claims.getOrDefault("roles", claims.getOrDefault(CLAIMS_NAMESPACE + "roles", new ArrayList<>()))
-        );
-    }
-
-    private static List<GrantedAuthority> mapRolesToGrantedAuthorities(Collection<String> roles) {
-        return roles.stream().filter(role -> role.startsWith("ROLE_")).map(SimpleGrantedAuthority::new).collect(Collectors.toList());
+        return authentication.getAuthorities().stream().map(GrantedAuthority::getAuthority);
     }
 
     public static Map<String, Object> extractDetailsFromTokenAttributes(Map<String, Object> attributes) {

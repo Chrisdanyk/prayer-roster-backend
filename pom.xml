@@ -108,10 +108,10 @@
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-mail</artifactId>
         </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-oauth2-client</artifactId>
-        </dependency>
+        <!--
+          No spring-boot-starter-oauth2-client: this backend is a stateless Resource Server only
+          (a separate frontend performs the Google sign-in) - see SecurityConfiguration.
+        -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-oauth2-resource-server</artifactId>
@@ -722,6 +722,55 @@
                             <goals>
                                 <goal>report-integration</goal>
                             </goals>
+                        </execution>
+                        <execution>
+                            <!--
+                              100% line+branch coverage gate on hand-authored business logic, per
+                              docs/sprint-roadmap.md. Excludes: unmodified JHipster scaffolding,
+                              MapStruct-generated impls, JPA static metamodel, plain no-logic
+                              DTOs/entities, the Spring Boot main class. Refined as each sprint adds
+                              packages - see backend-engineering-standards skill.
+                            -->
+                            <id>coverage-check</id>
+                            <phase>verify</phase>
+                            <goals>
+                                <goal>check</goal>
+                            </goals>
+                            <configuration>
+                                <rules>
+                                    <rule>
+                                        <element>BUNDLE</element>
+                                        <excludes>
+                                            <exclude>com.prayerroster.*App</exclude>
+                                            <exclude>com.prayerroster.ApplicationWebXml</exclude>
+                                            <exclude>com.prayerroster.GeneratedByJHipster</exclude>
+                                            <exclude>com.prayerroster.aop.**</exclude>
+                                            <exclude>com.prayerroster.config.**</exclude>
+                                            <exclude>com.prayerroster.domain.**</exclude>
+                                            <exclude>com.prayerroster.repository.**</exclude>
+                                            <exclude>com.prayerroster.security.AuthoritiesConstants</exclude>
+                                            <exclude>com.prayerroster.security.RoleNames</exclude>
+                                            <exclude>com.prayerroster.service.dto.**</exclude>
+                                            <exclude>com.prayerroster.service.mapper.*MapperImpl</exclude>
+                                            <exclude>com.prayerroster.web.rest.errors.**</exclude>
+                                            <exclude>com.prayerroster.web.rest.vm.**</exclude>
+                                        </excludes>
+                                        <limits>
+                                            <limit>
+                                                <counter>LINE</counter>
+                                                <value>COVEREDRATIO</value>
+                                                <minimum>1.00</minimum>
+                                            </limit>
+                                            <limit>
+                                                <counter>BRANCH</counter>
+                                                <value>COVEREDRATIO</value>
+                                                <minimum>1.00</minimum>
+                                            </limit>
+                                        </limits>
+                                    </rule>
+                                </rules>
+                                <haltOnFailure>true</haltOnFailure>
+                            </configuration>
                         </execution>
                     </executions>
                 </plugin>

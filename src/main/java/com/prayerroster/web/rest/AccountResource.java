@@ -12,7 +12,6 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -92,14 +91,10 @@ public class AccountResource {
     }
 
     private static UserVM getUserFromAuthentication(AbstractAuthenticationToken authToken) {
-        Map<String, Object> attributes;
-        if (authToken instanceof JwtAuthenticationToken) {
-            attributes = ((JwtAuthenticationToken) authToken).getTokenAttributes();
-        } else if (authToken instanceof OAuth2AuthenticationToken) {
-            attributes = ((OAuth2AuthenticationToken) authToken).getPrincipal().getAttributes();
-        } else {
-            throw new IllegalArgumentException("AuthenticationToken is not OAuth2 or JWT!");
+        if (!(authToken instanceof JwtAuthenticationToken jwtAuthToken)) {
+            throw new IllegalArgumentException("AuthenticationToken is not a JWT - this backend is a stateless Resource Server only!");
         }
+        Map<String, Object> attributes = jwtAuthToken.getTokenAttributes();
 
         return new UserVM(
             authToken.getName(),

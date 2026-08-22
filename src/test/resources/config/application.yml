@@ -30,13 +30,9 @@ spring:
     basename: i18n/messages
   security:
     oauth2:
-      client:
-        provider:
-          oidc:
-            issuer-uri: http://DO_NOT_CALL:9080/realms/jhipster
       resourceserver:
         jwt:
-          principal-claim-name: preferred_username
+          issuer-uri: http://DO_NOT_CALL:9080/realms/jhipster
   task:
     execution:
       thread-name-prefix: prayer-roster-backend-task-

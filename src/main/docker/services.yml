@@ -5,7 +5,5 @@ services:
     extends:
       file: ./postgresql.yml
       service: postgresql
-  keycloak:
-    extends:
-      file: ./keycloak.yml
-      service: keycloak
+  # No Keycloak: Google is the only identity provider (stateless Resource Server, see
+  # SecurityConfiguration) - nothing here plays the role JHipster's default Keycloak service does.

@@ -145,15 +145,11 @@ spring:
       enabled: true
   security:
     oauth2:
-      client:
-        provider:
-          oidc:
-            issuer-uri: http://localhost:9080/realms/jhipster
-        registration:
-          oidc:
-            client-id: web_app
-            client-secret: web_app
-            scope: openid, profile, email, offline_access # last one for refresh tokens
+      resourceserver:
+        jwt:
+          # Stateless resource server only: a separate frontend performs the Google sign-in and
+          # sends the resulting Google ID token as a Bearer token - see SecurityConfiguration.
+          issuer-uri: ${GOOGLE_ISSUER:https://accounts.google.com}
   task:
     execution:
       thread-name-prefix: prayer-roster-backend-task-
@@ -219,8 +215,7 @@ jhipster:
   security:
     oauth2:
       audience:
-        - account
-        - api://default
+        - ${GOOGLE_CLIENT_ID:}
 
 # jhipster-needle-add-application-yaml-document
 ---
@@ -233,4 +228,7 @@ jhipster:
 # https://www.jhipster.tech/common-application-properties/
 # ===================================================================
 
-# application:
+application:
+  security:
+    # Promoted to SUPER_ADMIN the first time this email is seen - see UserProvisioningService.
+    initial-super-admin-email: ${INITIAL_SUPER_ADMIN_EMAIL:}

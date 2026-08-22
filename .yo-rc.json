@@ -16,6 +16,6 @@
     "searchEngine": "no",
     "serviceDiscoveryType": "no",
     "skipClient": true,
-    "skipUserManagement": true
+    "skipUserManagement": false
   }
 }

@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260822100100-1" author="prayer-roster">
+        <createTable tableName="app_role">
+            <column name="id" type="bigint">
+                <constraints primaryKey="true" nullable="false"/>
+            </column>
+            <column name="name" type="varchar(50)">
+                <constraints nullable="false" unique="true" uniqueConstraintName="ux_app_role_name"/>
+            </column>
+            <column name="description" type="varchar(255)"/>
+            <column name="created_by" type="varchar(50)">
+                <constraints nullable="false"/>
+            </column>
+            <column name="created_date" type="${datetimeType}"/>
+            <column name="last_modified_by" type="varchar(50)"/>
+            <column name="last_modified_date" type="${datetimeType}"/>
+        </createTable>
+    </changeSet>
+
+    <changeSet id="20260822100100-2" author="prayer-roster">
+        <createTable tableName="role_permission">
+            <column name="role_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+            <column name="permission_id" type="bigint">
+                <constraints nullable="false"/>
+            </column>
+        </createTable>
+        <addPrimaryKey tableName="role_permission" columnNames="role_id, permission_id" constraintName="pk_role_permission"/>
+        <addForeignKeyConstraint
+            baseTableName="role_permission"
+            baseColumnNames="role_id"
+            constraintName="fk_role_permission_role_id"
+            referencedTableName="app_role"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+        <addForeignKeyConstraint
+            baseTableName="role_permission"
+            baseColumnNames="permission_id"
+            constraintName="fk_role_permission_permission_id"
+            referencedTableName="permission"
+            referencedColumnNames="id"
+            onDelete="CASCADE"
+        />
+    </changeSet>
+</databaseChangeLog>

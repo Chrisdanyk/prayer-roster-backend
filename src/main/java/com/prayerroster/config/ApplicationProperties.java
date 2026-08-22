@@ -13,10 +13,16 @@ public class ApplicationProperties {
 
     private final Liquibase liquibase = new Liquibase();
 
+    private final Security security = new Security();
+
     // jhipster-needle-application-properties-property
 
     public Liquibase getLiquibase() {
         return liquibase;
+    }
+
+    public Security getSecurity() {
+        return security;
     }
 
     // jhipster-needle-application-properties-property-getter
@@ -31,6 +37,24 @@ public class ApplicationProperties {
 
         public void setAsyncStart(Boolean asyncStart) {
             this.asyncStart = asyncStart;
+        }
+    }
+
+    public static class Security {
+
+        /**
+         * Email of the account to promote to SUPER_ADMIN the first time it is seen. Only applied
+         * when the local {@code User} row is first created - never re-checked on later logins, so
+         * a later manual demotion of this account is never silently undone by a restart.
+         */
+        private String initialSuperAdminEmail;
+
+        public String getInitialSuperAdminEmail() {
+            return initialSuperAdminEmail;
+        }
+
+        public void setInitialSuperAdminEmail(String initialSuperAdminEmail) {
+            this.initialSuperAdminEmail = initialSuperAdminEmail;
         }
     }
     // jhipster-needle-application-properties-property-class

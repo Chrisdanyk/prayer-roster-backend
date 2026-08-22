@@ -12,10 +12,10 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api")
 public class AuthInfoResource {
 
-    @Value("${spring.security.oauth2.client.provider.oidc.issuer-uri:}")
+    @Value("${spring.security.oauth2.resourceserver.jwt.issuer-uri:}")
     private String issuer;
 
-    @Value("${spring.security.oauth2.client.registration.oidc.client-id:}")
+    @Value("${GOOGLE_CLIENT_ID:}")
     private String clientId;
 
     @GetMapping("/auth-info")

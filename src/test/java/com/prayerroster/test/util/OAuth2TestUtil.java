@@ -1,93 +1,48 @@
 package com.prayerroster.test.util;
 
 import com.prayerroster.security.AuthoritiesConstants;
-import com.prayerroster.security.SecurityUtils;
 import java.time.Instant;
-import java.time.temporal.ChronoUnit;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import org.springframework.security.core.GrantedAuthority;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClient;
-import org.springframework.security.oauth2.client.OAuth2AuthorizedClientService;
-import org.springframework.security.oauth2.client.authentication.OAuth2AuthenticationToken;
-import org.springframework.security.oauth2.client.registration.ClientRegistration;
-import org.springframework.security.oauth2.core.OAuth2AccessToken;
-import org.springframework.security.oauth2.core.OAuth2AccessToken.TokenType;
-import org.springframework.security.oauth2.core.oidc.OidcIdToken;
-import org.springframework.security.oauth2.core.oidc.OidcUserInfo;
-import org.springframework.security.oauth2.core.oidc.user.DefaultOidcUser;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
+/**
+ * Builds {@link JwtAuthenticationToken}s matching what {@code DynamicJwtAuthenticationConverter}
+ * actually produces in production - a Google-shaped {@link Jwt} plus explicit authorities (since
+ * real authorities come from our Role/Permission graph, never from token claims).
+ */
 public class OAuth2TestUtil {
 
-    public static final String TEST_USER_LOGIN = "test";
+    public static final String TEST_USER_SUB = "108234567890123456789";
 
-    public static final String ID_TOKEN =
-        "eyJ0eXAiOiJKV1QiLCJhbGciOiJIUzI1NiJ9" +
-        ".eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiYWRtaW4iOnRydWUsIm" +
-        "p0aSI6ImQzNWRmMTRkLTA5ZjYtNDhmZi04YTkzLTdjNmYwMzM5MzE1OSIsImlhdCI6MTU0M" +
-        "Tk3MTU4MywiZXhwIjoxNTQxOTc1MTgzfQ.QaQOarmV8xEUYV7yvWzX3cUE_4W1luMcWCwpr" +
-        "oqqUrg";
-
-    public static OAuth2AuthenticationToken testAuthenticationToken() {
+    public static Jwt googleJwt(String sub, String email) {
         Map<String, Object> claims = new HashMap<>();
-        claims.put("sub", TEST_USER_LOGIN);
-        claims.put("preferred_username", TEST_USER_LOGIN);
-        claims.put("email", "john.doe@jhipster.com");
-        claims.put("roles", Collections.singletonList(AuthoritiesConstants.ADMIN));
-
-        return authenticationToken(claims);
+        claims.put("sub", sub);
+        claims.put("email", email);
+        claims.put("email_verified", true);
+        claims.put("given_name", "Jean");
+        claims.put("family_name", "Dupont");
+        return Jwt.withTokenValue("test-token")
+            .header("alg", "RS256")
+            .claims(c -> c.putAll(claims))
+            .issuedAt(Instant.now())
+            .expiresAt(Instant.now().plusSeconds(3600))
+            .build();
     }
 
-    public static OAuth2AuthenticationToken authenticationToken(Map<String, Object> claims) {
-        Instant issuedAt = Instant.now();
-        Instant expiresAt = Instant.now().plus(1, ChronoUnit.DAYS);
-        if (!claims.containsKey("sub")) {
-            claims.put("sub", "jane");
-        }
-        if (!claims.containsKey("preferred_username")) {
-            claims.put("preferred_username", "jane");
-        }
-        if (!claims.containsKey("email")) {
-            claims.put("email", "jane.doe@jhipster.com");
-        }
-        if (claims.containsKey("auth_time")) {
-            issuedAt = (Instant) claims.get("auth_time");
-        } else {
-            claims.put("auth_time", issuedAt);
-        }
-        if (claims.containsKey("exp")) {
-            expiresAt = (Instant) claims.get("exp");
-        } else {
-            claims.put("exp", expiresAt);
-        }
-        Collection<GrantedAuthority> authorities = SecurityUtils.extractAuthorityFromClaims(claims);
-        OidcIdToken token = new OidcIdToken(ID_TOKEN, issuedAt, expiresAt, claims);
-        OidcUserInfo userInfo = new OidcUserInfo(claims);
-        DefaultOidcUser user = new DefaultOidcUser(authorities, token, userInfo, "preferred_username");
-        return new OAuth2AuthenticationToken(user, user.getAuthorities(), "oidc");
+    public static JwtAuthenticationToken authenticationToken(String sub, String email, Collection<String> authorities) {
+        List<GrantedAuthority> granted = authorities.stream().map(a -> (GrantedAuthority) new SimpleGrantedAuthority(a)).toList();
+        return new JwtAuthenticationToken(googleJwt(sub, email), granted, sub);
     }
 
-    public static OAuth2AuthenticationToken registerAuthenticationToken(
-        OAuth2AuthorizedClientService authorizedClientService,
-        ClientRegistration clientRegistration,
-        OAuth2AuthenticationToken authentication
-    ) {
-        Map<String, Object> userDetails = authentication.getPrincipal().getAttributes();
-
-        OAuth2AccessToken token = new OAuth2AccessToken(
-            TokenType.BEARER,
-            "Token",
-            (Instant) userDetails.get("auth_time"),
-            (Instant) userDetails.get("exp")
-        );
-
-        authorizedClientService.saveAuthorizedClient(
-            new OAuth2AuthorizedClient(clientRegistration, authentication.getName(), token),
-            authentication
-        );
-
-        return authentication;
+    /** A token for a user with the JHipster-console-gating authority, matching a SUPER_ADMIN. */
+    public static JwtAuthenticationToken testAdminAuthenticationToken() {
+        return authenticationToken(TEST_USER_SUB, "jean.dupont@example.com", Collections.singletonList(AuthoritiesConstants.ADMIN));
     }
 }
