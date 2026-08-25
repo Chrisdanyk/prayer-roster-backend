@@ -29,4 +29,20 @@ class GoogleIdentityTest {
         assertThat(identity.firstName()).isEqualTo("Jean");
         assertThat(identity.lastName()).isEqualTo("Dupont");
     }
+
+    @Test
+    void fromClaims_readsPictureClaim() {
+        GoogleIdentity identity = GoogleIdentity.fromClaims(
+            Map.of("sub", "sub-1", "email", "jean@example.com", "picture", "https://lh3.googleusercontent.com/a/abc123")
+        );
+
+        assertThat(identity.imageUrl()).isEqualTo("https://lh3.googleusercontent.com/a/abc123");
+    }
+
+    @Test
+    void fromClaims_toleratesMissingPictureClaim() {
+        GoogleIdentity identity = GoogleIdentity.fromClaims(Map.of("sub", "sub-1", "email", "jean@example.com"));
+
+        assertThat(identity.imageUrl()).isNull();
+    }
 }

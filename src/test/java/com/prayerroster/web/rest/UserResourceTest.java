@@ -40,7 +40,7 @@ class UserResourceTest {
     private ObjectMapper objectMapper;
 
     private static UserDTO sampleUser() {
-        return new UserDTO("sub-1", "jean@example.com", "Jean", "Dupont", true, true, false, "USER");
+        return new UserDTO("sub-1", "jean@example.com", "Jean", "Dupont", "https://img/1.png", true, true, false, "USER");
     }
 
     @BeforeEach
@@ -82,7 +82,7 @@ class UserResourceTest {
     void updateUser_returnsUpdatedUser() throws Exception {
         UpdateUserRequest request = new UpdateUserRequest("Marie", "Curie", true, true);
         when(userManagementService.update(eq("sub-1"), any())).thenReturn(
-            new UserDTO("sub-1", "jean@example.com", "Marie", "Curie", true, true, true, "USER")
+            new UserDTO("sub-1", "jean@example.com", "Marie", "Curie", "https://img/1.png", true, true, true, "USER")
         );
 
         mockMvc
@@ -95,7 +95,7 @@ class UserResourceTest {
     void updateStatus_returnsUpdatedUser() throws Exception {
         UpdateUserStatusRequest request = new UpdateUserStatusRequest(false);
         when(userManagementService.updateStatus("sub-1", false)).thenReturn(
-            new UserDTO("sub-1", "jean@example.com", "Jean", "Dupont", false, true, false, "USER")
+            new UserDTO("sub-1", "jean@example.com", "Jean", "Dupont", "https://img/1.png", false, true, false, "USER")
         );
 
         mockMvc
@@ -110,7 +110,7 @@ class UserResourceTest {
     void assignRole_returnsUpdatedUser() throws Exception {
         AssignRoleRequest request = new AssignRoleRequest("ADMIN");
         when(userManagementService.assignRole("sub-1", "ADMIN")).thenReturn(
-            new UserDTO("sub-1", "jean@example.com", "Jean", "Dupont", true, true, false, "ADMIN")
+            new UserDTO("sub-1", "jean@example.com", "Jean", "Dupont", "https://img/1.png", true, true, false, "ADMIN")
         );
 
         mockMvc

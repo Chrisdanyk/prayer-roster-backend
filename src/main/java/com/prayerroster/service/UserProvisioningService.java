@@ -68,6 +68,10 @@ public class UserProvisioningService {
             user.setLastName(identity.lastName());
             changed = true;
         }
+        if (!Objects.equals(user.getImageUrl(), identity.imageUrl())) {
+            user.setImageUrl(identity.imageUrl());
+            changed = true;
+        }
         return changed ? userRepository.save(user) : user;
     }
 
@@ -93,6 +97,7 @@ public class UserProvisioningService {
         user.setEmail(identity.email());
         user.setFirstName(identity.firstName());
         user.setLastName(identity.lastName());
+        user.setImageUrl(identity.imageUrl());
         user.setActive(true);
         user.setLangKey("fr");
         user.setRole(resolveInitialRole(identity.email()));

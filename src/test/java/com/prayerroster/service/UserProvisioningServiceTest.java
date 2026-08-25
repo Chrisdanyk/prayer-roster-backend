@@ -29,7 +29,7 @@ import org.springframework.transaction.TransactionStatus;
 @ExtendWith(MockitoExtension.class)
 class UserProvisioningServiceTest {
 
-    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont");
+    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont", null);
 
     @Mock
     private UserRepository userRepository;
@@ -137,6 +137,32 @@ class UserProvisioningServiceTest {
         User result = service.provisionOrRefresh(IDENTITY);
 
         assertThat(result.getRole().getName()).isEqualTo(RoleNames.USER);
+    }
+
+    @Test
+    void provisionOrRefresh_storesImageUrlOnCreate() {
+        GoogleIdentity identity = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont", "https://img/1.png");
+        when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty());
+        when(roleRepository.findByNameWithPermissions(RoleNames.USER)).thenReturn(Optional.of(roleWithName(RoleNames.USER)));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User created = service.provisionOrRefresh(identity);
+
+        assertThat(created.getImageUrl()).isEqualTo("https://img/1.png");
+    }
+
+    @Test
+    void provisionOrRefresh_updatesImageUrlWhenGoogleAvatarChanged() {
+        User existing = existingUser();
+        existing.setImageUrl("https://img/old.png");
+        GoogleIdentity identity = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont", "https://img/new.png");
+        when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.of(existing));
+        when(userRepository.save(existing)).thenReturn(existing);
+
+        User refreshed = service.provisionOrRefresh(identity);
+
+        assertThat(refreshed.getImageUrl()).isEqualTo("https://img/new.png");
+        verify(userRepository).save(existing);
     }
 
     @Test

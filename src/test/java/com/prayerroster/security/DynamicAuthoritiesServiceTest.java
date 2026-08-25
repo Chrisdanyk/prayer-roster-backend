@@ -21,7 +21,7 @@ import org.springframework.security.core.GrantedAuthority;
 @ExtendWith(MockitoExtension.class)
 class DynamicAuthoritiesServiceTest {
 
-    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont");
+    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont", null);
 
     @Mock
     private UserProvisioningService provisioningService;
