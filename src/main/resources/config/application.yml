@@ -245,3 +245,9 @@ application:
   security:
     # Promoted to SUPER_ADMIN the first time this email is seen - see UserProvisioningService.
     initial-super-admin-email: ${INITIAL_SUPER_ADMIN_EMAIL:}
+  google:
+    # The backend performs the authorization-code exchange itself, so the secret is required and
+    # never leaves the server - see GoogleTokenExchangeService.
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:}

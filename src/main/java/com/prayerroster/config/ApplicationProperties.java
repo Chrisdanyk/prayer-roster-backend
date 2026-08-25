@@ -15,6 +15,8 @@ public class ApplicationProperties {
 
     private final Security security = new Security();
 
+    private final Google google = new Google();
+
     // jhipster-needle-application-properties-property
 
     public Liquibase getLiquibase() {
@@ -23,6 +25,10 @@ public class ApplicationProperties {
 
     public Security getSecurity() {
         return security;
+    }
+
+    public Google getGoogle() {
+        return google;
     }
 
     // jhipster-needle-application-properties-property-getter
@@ -57,5 +63,45 @@ public class ApplicationProperties {
             this.initialSuperAdminEmail = initialSuperAdminEmail;
         }
     }
+    /**
+     * Credentials for the server-side authorization-code exchange. This class is bound with
+     * {@code ignoreUnknownFields = false}, so any {@code application.google.*} key added to a yml
+     * file must have a matching field here or the context will not start. See
+     * docs/phase1-architecture.md section 10.
+     */
+    public static class Google {
+
+        private String clientId;
+
+        private String clientSecret;
+
+        /** Must exactly match a redirect URI registered in the Google Cloud console. */
+        private String redirectUri;
+
+        public String getClientId() {
+            return clientId;
+        }
+
+        public void setClientId(String clientId) {
+            this.clientId = clientId;
+        }
+
+        public String getClientSecret() {
+            return clientSecret;
+        }
+
+        public void setClientSecret(String clientSecret) {
+            this.clientSecret = clientSecret;
+        }
+
+        public String getRedirectUri() {
+            return redirectUri;
+        }
+
+        public void setRedirectUri(String redirectUri) {
+            this.redirectUri = redirectUri;
+        }
+    }
+
     // jhipster-needle-application-properties-property-class
 }
