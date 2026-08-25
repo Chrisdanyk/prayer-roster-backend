@@ -1,6 +1,7 @@
 package com.prayerroster.service;
 
 import com.prayerroster.repository.PrayerAssignmentRepository;
+import com.prayerroster.service.dto.ConflictingAssignmentDTO;
 import com.prayerroster.service.dto.UpcomingAssignmentDTO;
 import java.time.LocalDate;
 import java.util.Comparator;
@@ -38,6 +39,20 @@ public class PrayerAssignmentService {
             .stream()
             .sorted(Comparator.comparing(a -> a.getSession().getDate()))
             .map(UpcomingAssignmentDTO::from)
+            .toList();
+    }
+
+    /**
+     * Assignments a proposed unavailability would collide with. Read-only and deliberately separate
+     * from submission: without it the UI can only react after the backend has already flagged
+     * sessions and started rescheduling, which is exactly the surprise the warning exists to prevent.
+     */
+    @Transactional(readOnly = true)
+    public List<ConflictingAssignmentDTO> findOwnConflicts(String userId, LocalDate from, LocalDate to) {
+        return prayerAssignmentRepository
+            .findPublishedAssignmentsForUserInRange(userId, from, to)
+            .stream()
+            .map(ConflictingAssignmentDTO::from)
             .toList();
     }
 }
