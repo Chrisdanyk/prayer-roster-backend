@@ -11,6 +11,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -20,6 +21,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Loads or provisions the local {@link User} for a validated Google identity. Called on every
  * authenticated request's authority resolution (see {@code DynamicAuthoritiesService}), so the
  * fast path (existing, unchanged user) does exactly one read and no write.
+ * <p>
+ * An identity whose email is unverified, or whose local user has been deactivated, is denied
+ * outright - {@link InvalidBearerTokenException} means no {@code Authentication} is ever produced,
+ * so the request is rejected with 401 rather than merely resolving to an empty authority set. That
+ * distinction matters: authenticated-but-unauthorized still reaches every {@code /api/me/**}
+ * endpoint, which are deliberately not permission-gated.
  * <p>
  * The SUPER_ADMIN bootstrap check ({@code application.security.initial-super-admin-email}) only
  * ever runs at row creation - never re-evaluated on later logins, so a later manual demotion of
@@ -49,9 +56,20 @@ public class UserProvisioningService {
     }
 
     public User provisionOrRefresh(GoogleIdentity identity) {
-        return userRepository.findByIdWithRoleAndPermissions(identity.sub()).map(user -> refreshProfileIfChanged(user, identity)).orElseGet(
-            () -> createUserSafely(identity)
-        );
+        if (!identity.emailVerified()) {
+            throw new InvalidBearerTokenException("Google account email is not verified");
+        }
+        return userRepository
+            .findByIdWithRoleAndPermissions(identity.sub())
+            .map(user -> refreshAdmittedUser(user, identity))
+            .orElseGet(() -> createUserSafely(identity));
+    }
+
+    private User refreshAdmittedUser(User user, GoogleIdentity identity) {
+        if (!user.isActive()) {
+            throw new InvalidBearerTokenException("User account is deactivated");
+        }
+        return refreshProfileIfChanged(user, identity);
     }
 
     private User refreshProfileIfChanged(User user, GoogleIdentity identity) {

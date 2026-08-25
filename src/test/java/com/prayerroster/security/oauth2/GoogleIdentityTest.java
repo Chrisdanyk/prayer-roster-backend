@@ -45,4 +45,25 @@ class GoogleIdentityTest {
 
         assertThat(identity.imageUrl()).isNull();
     }
+
+    @Test
+    void fromClaims_readsEmailVerifiedClaim() {
+        GoogleIdentity identity = GoogleIdentity.fromClaims(Map.of("sub", "sub-1", "email", "jean@example.com", "email_verified", true));
+
+        assertThat(identity.emailVerified()).isTrue();
+    }
+
+    @Test
+    void fromClaims_treatsMissingEmailVerifiedAsFalse() {
+        GoogleIdentity identity = GoogleIdentity.fromClaims(Map.of("sub", "sub-1", "email", "jean@example.com"));
+
+        assertThat(identity.emailVerified()).isFalse();
+    }
+
+    @Test
+    void fromClaims_treatsANonBooleanEmailVerifiedAsFalse() {
+        GoogleIdentity identity = GoogleIdentity.fromClaims(Map.of("sub", "sub-1", "email", "jean@example.com", "email_verified", "true"));
+
+        assertThat(identity.emailVerified()).isFalse();
+    }
 }

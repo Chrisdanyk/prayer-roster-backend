@@ -21,7 +21,7 @@ import org.springframework.security.core.GrantedAuthority;
 @ExtendWith(MockitoExtension.class)
 class DynamicAuthoritiesServiceTest {
 
-    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont", null);
+    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", true, "Jean", "Dupont", null);
 
     @Mock
     private UserProvisioningService provisioningService;
@@ -64,17 +64,6 @@ class DynamicAuthoritiesServiceTest {
         Set<GrantedAuthority> authorities = service.resolveAuthorities(IDENTITY);
 
         assertThat(authorities).extracting(GrantedAuthority::getAuthority).doesNotContain(AuthoritiesConstants.ADMIN);
-    }
-
-    @Test
-    void resolveAuthorities_returnsNoAuthoritiesForInactiveUser() {
-        User inactive = userWith(RoleNames.SUPER_ADMIN, "ROSTER_GENERATE");
-        inactive.setActive(false);
-        when(provisioningService.provisionOrRefresh(IDENTITY)).thenReturn(inactive);
-
-        Set<GrantedAuthority> authorities = service.resolveAuthorities(IDENTITY);
-
-        assertThat(authorities).isEmpty();
     }
 
     @Test

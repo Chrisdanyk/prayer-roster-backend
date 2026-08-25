@@ -23,13 +23,14 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 
 @ExtendWith(MockitoExtension.class)
 class UserProvisioningServiceTest {
 
-    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont", null);
+    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", true, "Jean", "Dupont", null);
 
     @Mock
     private UserRepository userRepository;
@@ -140,8 +141,32 @@ class UserProvisioningServiceTest {
     }
 
     @Test
+    void provisionOrRefresh_rejectsUnverifiedEmail() {
+        GoogleIdentity unverified = new GoogleIdentity("sub-1", "jean@example.com", false, "Jean", "Dupont", null);
+
+        assertThatThrownBy(() -> service.provisionOrRefresh(unverified))
+            .isInstanceOf(InvalidBearerTokenException.class)
+            .hasMessageContaining("not verified");
+
+        verify(userRepository, never()).findByIdWithRoleAndPermissions(any());
+    }
+
+    @Test
+    void provisionOrRefresh_rejectsDeactivatedUser() {
+        User existing = existingUser();
+        existing.setActive(false);
+        when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.provisionOrRefresh(IDENTITY))
+            .isInstanceOf(InvalidBearerTokenException.class)
+            .hasMessageContaining("deactivated");
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
     void provisionOrRefresh_storesImageUrlOnCreate() {
-        GoogleIdentity identity = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont", "https://img/1.png");
+        GoogleIdentity identity = new GoogleIdentity("sub-1", "jean@example.com", true, "Jean", "Dupont", "https://img/1.png");
         when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty());
         when(roleRepository.findByNameWithPermissions(RoleNames.USER)).thenReturn(Optional.of(roleWithName(RoleNames.USER)));
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -155,7 +180,7 @@ class UserProvisioningServiceTest {
     void provisionOrRefresh_updatesImageUrlWhenGoogleAvatarChanged() {
         User existing = existingUser();
         existing.setImageUrl("https://img/old.png");
-        GoogleIdentity identity = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont", "https://img/new.png");
+        GoogleIdentity identity = new GoogleIdentity("sub-1", "jean@example.com", true, "Jean", "Dupont", "https://img/new.png");
         when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.of(existing));
         when(userRepository.save(existing)).thenReturn(existing);
 
