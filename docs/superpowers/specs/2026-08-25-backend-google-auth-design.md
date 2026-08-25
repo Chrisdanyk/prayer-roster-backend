@@ -168,7 +168,19 @@ Endpoints, using permissions that already exist in `permissions.json`:
 | `DELETE /api/allowed-emails/{id}` | `PERM_USER_DELETE` |
 
 `USER_CREATE` and `USER_DELETE` are currently unused, which suggests an invite mechanism was
-anticipated. See "Open question" below regarding which roles hold them.
+anticipated.
+
+**`ADMIN`'s seeded permission set gains `USER_CREATE` but not `USER_DELETE`.** Inviting a member is
+routine operational work — an `ADMIN` cannot build a roster out of people who cannot sign in — and
+it escalates nothing, since an invited account is provisioned with role `USER` and no permissions.
+Removal is destructive and rarer, so it stays with `SUPER_ADMIN`, consistent with Sprint 2's
+reasoning for withholding `USER_ROLE_ASSIGN`. A further consideration: these permission codes are
+generic, so a future `DELETE /api/users/{id}` would be gated by the same `USER_DELETE` — withholding
+it now avoids granting that by accident later.
+
+`RbacSeedService.seedRole` skips roles that already exist, so this changes only fresh installations.
+An existing database needs `USER_CREATE` assigned to `ADMIN` through the API, which is a
+`SUPER_ADMIN` action and reversible.
 
 ## Profile image
 
@@ -270,11 +282,8 @@ environment notes) and confirm:
 - `CLAUDE.md`: the auth section, which currently states the frontend performs sign-in.
 - `docs/sprint-roadmap.md`: a Sprint 10 entry.
 
-## Open question
+## Resolved during review
 
-`RbacSeedService` seeds `ADMIN` with neither `USER_CREATE` nor `USER_DELETE`, so **by default only
-`SUPER_ADMIN` can invite or remove people.** That may be intentional — Sprint 2 deliberately kept
-`USER_ROLE_ASSIGN` away from `ADMIN` — or it may simply be that no endpoint used those permissions
-until now. Note that `seedRole` skips roles that already exist, so changing the default set affects
-only new installations; existing databases need the permission assigned through the API. Confirm
-before implementation.
+`ADMIN` gains `USER_CREATE` in its seeded set so administrators can invite; `USER_DELETE` stays with
+`SUPER_ADMIN`. Reasoning and the migration caveat for existing databases are recorded under
+"Allowlist semantics".
