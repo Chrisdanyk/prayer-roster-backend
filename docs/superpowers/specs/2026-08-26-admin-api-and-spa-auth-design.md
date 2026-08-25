@@ -122,6 +122,23 @@ Read-only, mutating nothing. Without it the UI cannot warn *before* submission �
 after the backend has already flagged sessions and started rescheduling, which is precisely the
 surprise §18 of the frontend brief is trying to prevent.
 
+## B6 — Member visibility of the weekly rhythm
+
+`RbacSeedService` seeds `USER` with `PRAYER_CONFIG_VIEW`, and nothing else.
+
+Assignments stay private: a member still sees only their own, because `/api/prayer-sessions` remains
+behind `ROSTER_VIEW`. What this exposes is the *recurring pattern* — prayer happens Monday,
+Wednesday, Friday; Wednesday needs a preacher — which is public information in any congregation and
+reveals nothing about who serves.
+
+The reason it matters is that without it a member's calendar shows one or two highlighted days in an
+otherwise empty month, which is a list wearing a calendar's clothes. With it, a member sees the
+rhythm of church life and their own duties placed inside it.
+
+`seedRole` skips roles that already exist, so this affects fresh databases only; an existing one
+needs the permission granted to `USER` through the API by a `SUPER_ADMIN`. Same caveat as `ADMIN`
+gaining `USER_CREATE` in Sprint 10.
+
 ## Testing
 
 Unit tests in the established shape (Mockito, standalone MockMvc, no Spring context), 100% line and
@@ -133,6 +150,7 @@ Behaviours that must be tested because they are where this breaks:
 - the callback's two branches (redirect when configured, JSON when not)
 - every role guard above, and that `evictAll()` is called on role writes
 - admin availability publishing the rescheduling event
+- `USER`'s seeded permission set containing exactly `PRAYER_CONFIG_VIEW`
 
 Live verification drives the packaged jar against a real Postgres, as every sprint has: complete a
 real Google sign-in through the redirect branch and confirm the SPA-style exchange returns a working

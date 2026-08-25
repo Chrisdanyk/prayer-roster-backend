@@ -3,6 +3,8 @@
 Status: proposed design, not yet implemented
 Depends on: `2026-08-26-admin-api-and-spa-auth-design.md` (B1 blocks all authenticated work)
 Reference: `../../../nsia-dashboard` (inspiration, not a template)
+Location: this application lives in its own repository at `prayer-roster/frontend/`, matching how
+the backend and NSIA are each standalone. This document moves there once that repo exists.
 
 ## Problem
 
@@ -17,10 +19,16 @@ first, dark blue and white, restrained, fast, accessible, and honest about what 
 
 Every screen below is traced to a real endpoint. Two constraints shaped the whole design:
 
-1. **A member sees only their own assignments.** The `USER` role is seeded with zero permissions and
-   `/api/prayer-sessions` requires `ROSTER_VIEW`. This is a product decision, confirmed: the
-   community calendar is administrative. A member's calendar is built from
-   `/api/me/prayer-assignments`, which returns `(id, date, role)` and nothing else.
+1. **A member sees only their own assignments.** `/api/prayer-sessions` requires `ROSTER_VIEW`,
+   which `USER` does not hold. This is a confirmed product decision: the community calendar is
+   administrative. A member's assignments come from `/api/me/prayer-assignments`, which returns
+   `(id, date, role)` and nothing else.
+
+   Two consequences follow. The member view is **agenda-first** — a chronological list of your dates
+   with a compact month strip — rather than a full grid, because a month showing one highlighted day
+   is a list wearing a calendar's clothes. And `USER` gains `PRAYER_CONFIG_VIEW` (spec B6) so the
+   *weekly rhythm* can be drawn as context: which days have prayer, which need a preacher. That
+   exposes the pattern, never the people.
 2. **There is no time-of-day and no per-assignment status anywhere in the domain.** Any mockup
    showing "19:00" or "Statut: Confirmée" cannot be built and is dropped rather than faked.
 
@@ -137,7 +145,7 @@ calendrier, disponibilités, notifications, CTA. `/auth/callback` exchanges the 
 | Screen | Endpoint |
 |---|---|
 | Tableau de bord | `/api/me/prayer-assignments`, `/api/me/notifications` |
-| Mon calendrier | `/api/me/prayer-assignments` (own assignments only) |
+| Mon calendrier (agenda-first) | `/api/me/prayer-assignments` + `/api/prayer-config/weekly` for rhythm |
 | Mes services | `/api/me/prayer-assignments`, `/pdf` |
 | Mes disponibilités | `/api/me/availability` + conflict preview (B5) |
 | Notifications | `/api/me/notifications`, `PUT /{id}/read` |
