@@ -34,6 +34,11 @@ public class RbacSeedService implements ApplicationRunner {
 
     private static final List<String> ADMIN_DEFAULT_PERMISSIONS = List.of(
         "USER_VIEW",
+        // Inviting is routine operational work and escalates nothing - an invited account is
+        // provisioned with role USER and no permissions. USER_DELETE is deliberately withheld:
+        // removal is destructive, and the same generic code would gate a future
+        // DELETE /api/users/{id}. See docs/phase1-architecture.md section 10.
+        "USER_CREATE",
         "USER_UPDATE",
         "PRAYER_CONFIG_VIEW",
         "PRAYER_CONFIG_UPDATE",
