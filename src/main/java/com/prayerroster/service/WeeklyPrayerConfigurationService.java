@@ -56,8 +56,8 @@ public class WeeklyPrayerConfigurationService {
         Optional<WeeklyPrayerConfiguration> current = repository.findCurrent();
 
         WeeklyPrayerConfiguration target;
-        if (current.isPresent() && current.get().getEffectiveFrom().equals(today)) {
-            target = current.get();
+        if (current.isPresent() && current.orElseThrow().getEffectiveFrom().equals(today)) {
+            target = current.orElseThrow();
             target.getDays().clear();
         } else {
             current.ifPresent(previous -> previous.setEffectiveTo(today.minusDays(1)));
