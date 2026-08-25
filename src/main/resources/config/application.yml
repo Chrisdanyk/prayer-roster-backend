@@ -251,3 +251,5 @@ application:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
     redirect-uri: ${GOOGLE_REDIRECT_URI:}
+  frontend:
+    base-url: ${FRONTEND_BASE_URL:}

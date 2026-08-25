@@ -17,6 +17,8 @@ public class ApplicationProperties {
 
     private final Google google = new Google();
 
+    private final Frontend frontend = new Frontend();
+
     // jhipster-needle-application-properties-property
 
     public Liquibase getLiquibase() {
@@ -29,6 +31,10 @@ public class ApplicationProperties {
 
     public Google getGoogle() {
         return google;
+    }
+
+    public Frontend getFrontend() {
+        return frontend;
     }
 
     // jhipster-needle-application-properties-property-getter
@@ -100,6 +106,24 @@ public class ApplicationProperties {
 
         public void setRedirectUri(String redirectUri) {
             this.redirectUri = redirectUri;
+        }
+    }
+
+    /**
+     * When set, the Google callback redirects the browser here with a single-use handoff instead of
+     * returning JSON. Left blank, the JSON branch stays active - which is how this project performs
+     * live verification, since a full @SpringBootTest cannot boot here.
+     */
+    public static class Frontend {
+
+        private String baseUrl;
+
+        public String getBaseUrl() {
+            return baseUrl;
+        }
+
+        public void setBaseUrl(String baseUrl) {
+            this.baseUrl = baseUrl;
         }
     }
 
