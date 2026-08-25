@@ -64,7 +64,7 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       setting entirely in memory against one query for the whole version history - O(1) queries
       regardless of period length, never one query per date. Fully validates the whole period
       up front before writing anything, so a failure never leaves partial/orphaned rows. `POST
-  /api/rosters/generate`, `GET /api/rosters[/{id}]`, `GET /api/prayer-sessions[/{id}]`, all
+    /api/rosters/generate`, `GET /api/rosters[/{id}]`, `GET /api/prayer-sessions[/{id}]`, all
       N+1-safe. 27 new tests (134/134 total), JaCoCo gate green (27 classes, 100%). Live-verified
       end-to-end - including proving the `ux_prayer_session_date` and
       `ux_prayer_assignment_session_id_role` constraints actually reject violations, not just that
@@ -104,7 +104,7 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       `PREACHER` slot) and the roster auto-published; deactivating the only preacher-capable user and
       regenerating produced `RosterGeneration.status = INFEASIBLE` with
       `errorMessage = "moderatorAndPreacherMustDiffer: 1 violation(s); userMustHavePreachingCapability:
-  1 violation(s)"` and the roster correctly stayed `DRAFT`. Also hit and worked around a local
+    1 violation(s)"` and the roster correctly stayed `DRAFT`. Also hit and worked around a local
       environment quirk unrelated to the app itself: a native macOS Postgres was already listening on
       127.0.0.1:5432, shadowing the Docker container's port-forward - moved verification to port 5433.
 - [x] **Sprint 6 — Rescheduling**: extracted `RosterSolvingService` (the shared "solve then apply the
@@ -131,7 +131,7 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       Found and fixed one real, serious bug via live testing - unit tests could not have caught
       this, since Mockito never exercises real Spring transaction management: calling an
       `@Transactional` service method from inside a `@TransactionalEventListener(phase =
-  AFTER_COMMIT)` callback relies on Spring correctly resolving "no transaction is active right
+    AFTER_COMMIT)` callback relies on Spring correctly resolving "no transaction is active right
       now" at that exact moment to start a fresh one. In practice that resolution was unreliable
       immediately after the triggering transaction's own commit - the reschedule _appeared_ to
       succeed (a real Timefold solve ran, a sequence value was consumed for the new
@@ -188,7 +188,7 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       post-solve value, making every case look like "no change." Fixed with a `solvedClone()` helper
       documented for future contributors. The production bug - found only by live verification, since
       Mockito-mocked repositories never validate derived-query syntax: `ReminderConfigurationRepository
-  .existsByDaysBefore(Integer)` failed at real `JpaRepository` initialization with "No property
+    .existsByDaysBefore(Integer)` failed at real `JpaRepository` initialization with "No property
       'days' found for type 'ReminderConfiguration'" - Spring Data's parser split "DaysBefore" into
       property `days` + the reserved `Before` (date-comparison) keyword, since a whole-word
       `daysBefore` property isn't distinguishable from that split. Fixed with an explicit `@Query`.
@@ -301,25 +301,53 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       inactive user, which strips authorities but does _not_ prevent authentication - the converter
       still built a `JwtAuthenticationToken`, `.authenticated()` passed, and **a deactivated user kept
       full access to every `/api/me/**` endpoint** and could still submit availability. Sprint 6 treats
-  deactivation as removal and triggers rescheduling on it, so the lockout was always meant to be
-  complete. Fixed by denying at provisioning (`InvalidBearerTokenException`-> 401, no
- `Authentication`built at all), which also covers unverified emails and uninvited addresses at
-  the same choke point. That made the`isActive()`branch unreachable, so it was deleted rather
-  than tested around, as in sprints 3, 5 and 7.
-  **Also found that`./mvnw verify`had been failing since Sprint 3** - proven by stashing all work
-  and running it on a clean tree: two`Optional.get()`calls in`WeeklyPrayerConfigurationService`
-  violate the modernizer plugin, which aborts the build *before* JaCoCo runs. The "JaCoCo gate
-  green" claims in sprints 3-9 cannot have come from this command. Fixed in its own commit
-  (`orElseThrow()`), and `verify`now completes end-to-end for the first time.
-  Two smaller notes:`UriComponents.encode()`leaves`:`and`/`intact because RFC 3986 permits
-  them in a query component, so authorization-URL values are encoded individually - Google's
-  documented examples pass a fully-encoded`redirect_uri`, and an unencoded one would break if the
-  configured URI ever carried its own query string. And `email_verified`is read with
- `Boolean.TRUE.equals`, failing closed on a missing or non-boolean claim.
-  48 new tests (312/312 total), JaCoCo gate genuinely green - verified by a `verify`run that
-  actually reaches it. Live verification against a real Postgres is **pending**: it needs a Google
-  OAuth client (id, secret, and`http://localhost:8080/api/auth/google/callback` registered as a
-      redirect URI) that only the project owner can create.
+      deactivation as removal and triggers rescheduling on it, so the lockout was always meant to be
+      complete. Fixed by denying at provisioning (`InvalidBearerTokenException` -> 401, no
+      `Authentication` built at all), which also covers unverified emails and uninvited addresses at
+      the same choke point. That made the `isActive()` branch unreachable, so it was deleted rather
+      than tested around, as in sprints 3, 5 and 7.
+      **Also found that `./mvnw verify` had been failing since Sprint 3** - proven by stashing all work
+      and running it on a clean tree: two `Optional.get()` calls in `WeeklyPrayerConfigurationService`
+      violate the modernizer plugin, which aborts the build *before* JaCoCo runs. The "JaCoCo gate
+      green" claims in sprints 3-9 cannot have come from this command. Fixed in its own commit
+      (`orElseThrow()`), and `verify` now completes end-to-end for the first time.
+      Two smaller notes: `UriComponents.encode()` leaves `:` and `/` intact because RFC 3986 permits
+      them in a query component, so authorization-URL values are encoded individually - Google's
+      documented examples pass a fully-encoded `redirect_uri`, and an unencoded one would break if the
+      configured URI ever carried its own query string. And `email_verified` is read with
+      `Boolean.TRUE.equals`, failing closed on a missing or non-boolean claim.
+      48 new tests (312/312 total), JaCoCo gate genuinely green - verified by a `verify` run that
+      actually reaches it.
+      **Live-verified against a real Postgres and the real Google endpoints** (packaged jar; native
+      Postgres on 5432 because Colima was down - the same shadowing quirk Sprint 5 hit). Liquibase
+      applied both changelogs cleanly (18 -> 20 changesets, `allowed_email` with
+      `ux_allowed_email_email`, `app_user.image_url`). The app booted with the new
+      `application.google.*` keys, which is itself the binding check `ignoreUnknownFields = false`
+      demands. `GET /api/auth/google/url` returned a genuine authorization URL whose endpoint came from
+      **Google's live OIDC metadata**, carrying a fully-encoded `redirect_uri`, an S256
+      `code_challenge`, and a `state`. The callback with a real state and a bogus code **actually
+      reached Google's token endpoint with the client secret** and came back
+      `invalid_grant / "Malformed auth code"` - the exchange path proven end to end, not mocked.
+      Replaying that same state returned 400 `error.invalidState`, proving single-use consumption
+      against a running server. `error=access_denied`, a missing code, and a never-issued state each
+      returned 400; every protected endpoint returned 401 unauthenticated while `/api/auth-info`
+      returned 200.
+      **Live verification found a bug the unit test had missed.** `GoogleTokenExchangeService` chained
+      the `RestClientException` as its cause, and JHipster's `ExceptionTranslator` builds the
+      ProblemDetail's `detail` from the cause chain - so the 502 republished **Google's raw response
+      body verbatim to an unauthenticated caller**. The existing test asserted only that the
+      exception's own message excluded upstream detail, which was true and beside the point: it tested
+      the wrong layer. Fixed by not attaching the cause and logging upstream detail at WARN
+      server-side; re-verified live that `detail` is now our own message and Google's body appears
+      exactly once, in the log. The test now asserts `hasNoCause()`, the property that actually
+      mattered.
+      **Still outstanding** are the four checks needing a real signed token: a token authenticating a
+      real request, `PERM_*` gating returning 403 for an insufficient role, an uninvited email refused
+      with no `app_user` row created, and a deactivated user refused on `/api/me/**`. The credentials
+      available carried a redirect URI belonging to a different project
+      (`localhost:8000/api/v1/auth/google/callback/`), and Google matches redirect URIs exactly, so the
+      browser leg could not run. Registering `http://localhost:8080/api/auth/google/callback` for the
+      client unblocks it.
 
 ## Local environment notes
 
