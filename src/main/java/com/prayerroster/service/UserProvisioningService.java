@@ -3,6 +3,7 @@ package com.prayerroster.service;
 import com.prayerroster.config.ApplicationProperties;
 import com.prayerroster.domain.Role;
 import com.prayerroster.domain.User;
+import com.prayerroster.repository.AllowedEmailRepository;
 import com.prayerroster.repository.RoleRepository;
 import com.prayerroster.repository.UserRepository;
 import com.prayerroster.security.RoleNames;
@@ -39,17 +40,20 @@ public class UserProvisioningService {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final AllowedEmailRepository allowedEmailRepository;
     private final ApplicationProperties applicationProperties;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public UserProvisioningService(
         UserRepository userRepository,
         RoleRepository roleRepository,
+        AllowedEmailRepository allowedEmailRepository,
         ApplicationProperties applicationProperties,
         PlatformTransactionManager transactionManager
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
+        this.allowedEmailRepository = allowedEmailRepository;
         this.applicationProperties = applicationProperties;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
@@ -62,7 +66,21 @@ public class UserProvisioningService {
         return userRepository
             .findByIdWithRoleAndPermissions(identity.sub())
             .map(user -> refreshAdmittedUser(user, identity))
-            .orElseGet(() -> createUserSafely(identity));
+            .orElseGet(() -> createUserSafely(requireAdmitted(identity)));
+    }
+
+    /**
+     * The allowlist governs first admission only, so it is consulted solely on the path that would
+     * create a row. The bootstrap super-admin email is an implicit entry, otherwise the very first
+     * sign-in against an empty database could never succeed.
+     */
+    private GoogleIdentity requireAdmitted(GoogleIdentity identity) {
+        String bootstrapEmail = applicationProperties.getSecurity().getInitialSuperAdminEmail();
+        boolean bootstrap = bootstrapEmail != null && bootstrapEmail.equalsIgnoreCase(identity.email());
+        if (!bootstrap && !allowedEmailRepository.existsByEmailIgnoringCase(identity.email())) {
+            throw new InvalidBearerTokenException("Email address is not invited");
+        }
+        return identity;
     }
 
     private User refreshAdmittedUser(User user, GoogleIdentity identity) {
