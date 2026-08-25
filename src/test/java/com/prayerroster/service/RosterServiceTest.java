@@ -5,8 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
 import com.prayerroster.domain.Roster;
+import com.prayerroster.domain.RosterGeneration;
+import com.prayerroster.domain.RosterGenerationStatus;
 import com.prayerroster.domain.RosterStatus;
+import com.prayerroster.repository.RosterGenerationRepository;
 import com.prayerroster.repository.RosterRepository;
+import com.prayerroster.service.dto.RosterGenerationDTO;
 import com.prayerroster.web.rest.errors.EntityNotFoundException;
 import java.time.LocalDate;
 import java.util.List;
@@ -25,11 +29,14 @@ class RosterServiceTest {
     @Mock
     private RosterRepository rosterRepository;
 
+    @Mock
+    private RosterGenerationRepository generationRepository;
+
     private RosterService service;
 
     @BeforeEach
     void setUp() {
-        service = new RosterService(rosterRepository);
+        service = new RosterService(rosterRepository, generationRepository);
     }
 
     private static Roster roster(Long id) {
@@ -64,5 +71,32 @@ class RosterServiceTest {
         when(rosterRepository.findById(99L)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.findOne(99L)).isInstanceOf(EntityNotFoundException.class);
+    }
+
+    @Test
+    void findGenerations_returnsTheAuditTrailMostRecentFirst() {
+        when(rosterRepository.existsById(1L)).thenReturn(true);
+        RosterGeneration generation = new RosterGeneration();
+        generation.setId(7L);
+        generation.setStatus(RosterGenerationStatus.COMPLETED);
+        generation.setHardScore(0);
+        generation.setSoftScore(-12);
+        generation.setSolverDurationMs(1800L);
+        when(generationRepository.findByRosterIdMostRecentFirst(1L)).thenReturn(List.of(generation));
+
+        List<RosterGenerationDTO> result = service.findGenerations(1L);
+
+        assertThat(result).singleElement().satisfies(dto -> {
+            assertThat(dto.hardScore()).isZero();
+            assertThat(dto.softScore()).isEqualTo(-12);
+            assertThat(dto.solverDurationMs()).isEqualTo(1800L);
+        });
+    }
+
+    @Test
+    void findGenerations_rejectsAnUnknownRoster() {
+        when(rosterRepository.existsById(99L)).thenReturn(false);
+
+        assertThatThrownBy(() -> service.findGenerations(99L)).isInstanceOf(EntityNotFoundException.class);
     }
 }
