@@ -341,13 +341,22 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       server-side; re-verified live that `detail` is now our own message and Google's body appears
       exactly once, in the log. The test now asserts `hasNoCause()`, the property that actually
       mattered.
-      **Still outstanding** are the four checks needing a real signed token: a token authenticating a
-      real request, `PERM_*` gating returning 403 for an insufficient role, an uninvited email refused
-      with no `app_user` row created, and a deactivated user refused on `/api/me/**`. The credentials
-      available carried a redirect URI belonging to a different project
-      (`localhost:8000/api/v1/auth/google/callback/`), and Google matches redirect URIs exactly, so the
-      browser leg could not run. Registering `http://localhost:8080/api/auth/google/callback` for the
-      client unblocks it.
+      **The full browser flow was then verified end to end with a real Google account.** The available
+      OAuth client had a redirect URI belonging to a different project
+      (`localhost:8000/api/v1/auth/google/callback/`), and Google matches redirect URIs exactly - but no
+      console change was needed: nothing has to *serve* that URI, only send the same value in the
+      exchange, so the code was taken from the browser's address bar after sign-in and handed to the
+      callback directly. The exchange returned a genuine Google ID token (`email_verified=true`, a
+      `picture` claim present, `aud` matching the configured client).
+      Against that one real token, on a clean database: an **uninvited address was refused with 401 and
+      created no `app_user` row**; inviting it and replaying the same token was **admitted with role
+      `USER`**, the Google avatar stored (97 chars); a `PERM_ROSTER_VIEW`-gated endpoint returned **403**
+      for that permission-less role while `/api/me/availability` returned 200, confirming the two gates
+      are independent; **emptying the allowlist left the existing user working**, proving first-admission
+      semantics rather than ongoing revocation; and after deactivation - waiting out the 60s authorities
+      cache, since a direct SQL update bypasses the eviction the API performs - `/api/account`,
+      `GET /api/me/availability` and `POST /api/me/availability` all returned **401**. That last one is
+      the fix: on `develop` today a deactivated user still gets 200 on those routes and can write.
 
 ## Local environment notes
 
