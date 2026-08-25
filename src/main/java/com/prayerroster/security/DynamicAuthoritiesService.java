@@ -44,9 +44,6 @@ public class DynamicAuthoritiesService {
     }
 
     private Set<GrantedAuthority> computeAuthorities(User user) {
-        if (!user.isActive()) {
-            return Set.of();
-        }
         Set<GrantedAuthority> authorities = user
             .getRole()
             .getPermissions()

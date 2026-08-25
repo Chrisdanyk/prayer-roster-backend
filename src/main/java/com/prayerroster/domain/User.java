@@ -36,6 +36,11 @@ public class User extends AbstractAuditingEntity<String> {
     @Column(name = "last_name", length = 100)
     private String lastName;
 
+    /** The {@code picture} claim from the Google ID token; absent for accounts with no avatar. */
+    @Size(max = 512)
+    @Column(name = "image_url", length = 512)
+    private String imageUrl;
+
     @NotNull
     @Column(name = "active", nullable = false)
     private boolean active = true;
@@ -89,6 +94,14 @@ public class User extends AbstractAuditingEntity<String> {
 
     public void setLastName(String lastName) {
         this.lastName = lastName;
+    }
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
     }
 
     public boolean isActive() {

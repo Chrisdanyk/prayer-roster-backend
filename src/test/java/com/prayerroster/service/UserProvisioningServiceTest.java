@@ -7,11 +7,13 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.prayerroster.config.ApplicationProperties;
 import com.prayerroster.domain.Role;
 import com.prayerroster.domain.User;
+import com.prayerroster.repository.AllowedEmailRepository;
 import com.prayerroster.repository.RoleRepository;
 import com.prayerroster.repository.UserRepository;
 import com.prayerroster.security.RoleNames;
@@ -23,19 +25,23 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionStatus;
 
 @ExtendWith(MockitoExtension.class)
 class UserProvisioningServiceTest {
 
-    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", "Jean", "Dupont");
+    private static final GoogleIdentity IDENTITY = new GoogleIdentity("sub-1", "jean@example.com", true, "Jean", "Dupont", null);
 
     @Mock
     private UserRepository userRepository;
 
     @Mock
     private RoleRepository roleRepository;
+
+    @Mock
+    private AllowedEmailRepository allowedEmailRepository;
 
     @Mock
     private PlatformTransactionManager transactionManager;
@@ -50,7 +56,7 @@ class UserProvisioningServiceTest {
     void setUp() {
         applicationProperties = new ApplicationProperties();
         lenient().when(transactionManager.getTransaction(any())).thenReturn(transactionStatus);
-        service = new UserProvisioningService(userRepository, roleRepository, applicationProperties, transactionManager);
+        service = new UserProvisioningService(userRepository, roleRepository, allowedEmailRepository, applicationProperties, transactionManager);
     }
 
     @Test
@@ -103,6 +109,7 @@ class UserProvisioningServiceTest {
 
     @Test
     void provisionOrRefresh_createsNewUserWithUserRoleByDefault() {
+        when(allowedEmailRepository.existsByEmailIgnoringCase("jean@example.com")).thenReturn(true);
         when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty());
         when(roleRepository.findByNameWithPermissions(RoleNames.USER)).thenReturn(Optional.of(roleWithName(RoleNames.USER)));
         when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
@@ -129,6 +136,7 @@ class UserProvisioningServiceTest {
 
     @Test
     void provisionOrRefresh_doesNotPromoteWhenBootstrapEmailDoesNotMatch() {
+        when(allowedEmailRepository.existsByEmailIgnoringCase("jean@example.com")).thenReturn(true);
         applicationProperties.getSecurity().setInitialSuperAdminEmail("someone-else@example.com");
         when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty());
         when(roleRepository.findByNameWithPermissions(RoleNames.USER)).thenReturn(Optional.of(roleWithName(RoleNames.USER)));
@@ -140,7 +148,94 @@ class UserProvisioningServiceTest {
     }
 
     @Test
+    void provisionOrRefresh_rejectsUnverifiedEmail() {
+        GoogleIdentity unverified = new GoogleIdentity("sub-1", "jean@example.com", false, "Jean", "Dupont", null);
+
+        assertThatThrownBy(() -> service.provisionOrRefresh(unverified))
+            .isInstanceOf(InvalidBearerTokenException.class)
+            .hasMessageContaining("not verified");
+
+        verify(userRepository, never()).findByIdWithRoleAndPermissions(any());
+    }
+
+    @Test
+    void provisionOrRefresh_rejectsDeactivatedUser() {
+        User existing = existingUser();
+        existing.setActive(false);
+        when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.of(existing));
+
+        assertThatThrownBy(() -> service.provisionOrRefresh(IDENTITY))
+            .isInstanceOf(InvalidBearerTokenException.class)
+            .hasMessageContaining("deactivated");
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void provisionOrRefresh_rejectsUninvitedEmailAndCreatesNoRow() {
+        when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty());
+        when(allowedEmailRepository.existsByEmailIgnoringCase("jean@example.com")).thenReturn(false);
+
+        assertThatThrownBy(() -> service.provisionOrRefresh(IDENTITY))
+            .isInstanceOf(InvalidBearerTokenException.class)
+            .hasMessageContaining("not invited");
+
+        verify(userRepository, never()).save(any());
+    }
+
+    @Test
+    void provisionOrRefresh_admitsBootstrapSuperAdminWithoutAnInvite() {
+        applicationProperties.getSecurity().setInitialSuperAdminEmail("JEAN@EXAMPLE.COM");
+        when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty());
+        when(roleRepository.findByNameWithPermissions(RoleNames.SUPER_ADMIN)).thenReturn(Optional.of(roleWithName(RoleNames.SUPER_ADMIN)));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User created = service.provisionOrRefresh(IDENTITY);
+
+        assertThat(created.getRole().getName()).isEqualTo(RoleNames.SUPER_ADMIN);
+        verifyNoInteractions(allowedEmailRepository);
+    }
+
+    @Test
+    void provisionOrRefresh_doesNotRecheckTheAllowlistForAnExistingUser() {
+        User existing = existingUser();
+        when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.of(existing));
+
+        service.provisionOrRefresh(IDENTITY);
+
+        verifyNoInteractions(allowedEmailRepository);
+    }
+
+    @Test
+    void provisionOrRefresh_storesImageUrlOnCreate() {
+        when(allowedEmailRepository.existsByEmailIgnoringCase("jean@example.com")).thenReturn(true);
+        GoogleIdentity identity = new GoogleIdentity("sub-1", "jean@example.com", true, "Jean", "Dupont", "https://img/1.png");
+        when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty());
+        when(roleRepository.findByNameWithPermissions(RoleNames.USER)).thenReturn(Optional.of(roleWithName(RoleNames.USER)));
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        User created = service.provisionOrRefresh(identity);
+
+        assertThat(created.getImageUrl()).isEqualTo("https://img/1.png");
+    }
+
+    @Test
+    void provisionOrRefresh_updatesImageUrlWhenGoogleAvatarChanged() {
+        User existing = existingUser();
+        existing.setImageUrl("https://img/old.png");
+        GoogleIdentity identity = new GoogleIdentity("sub-1", "jean@example.com", true, "Jean", "Dupont", "https://img/new.png");
+        when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.of(existing));
+        when(userRepository.save(existing)).thenReturn(existing);
+
+        User refreshed = service.provisionOrRefresh(identity);
+
+        assertThat(refreshed.getImageUrl()).isEqualTo("https://img/new.png");
+        verify(userRepository).save(existing);
+    }
+
+    @Test
     void provisionOrRefresh_fallsBackToReadingWinnerRowWhenConcurrentCreateLosesRace() {
+        when(allowedEmailRepository.existsByEmailIgnoringCase("jean@example.com")).thenReturn(true);
         User winnerRow = existingUser();
         when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty(), Optional.of(winnerRow));
         when(roleRepository.findByNameWithPermissions(RoleNames.USER)).thenReturn(Optional.of(roleWithName(RoleNames.USER)));
@@ -154,6 +249,7 @@ class UserProvisioningServiceTest {
 
     @Test
     void provisionOrRefresh_rethrowsWhenRaceLostButWinnerRowStillNotFound() {
+        when(allowedEmailRepository.existsByEmailIgnoringCase("jean@example.com")).thenReturn(true);
         when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty());
         when(roleRepository.findByNameWithPermissions(RoleNames.USER)).thenReturn(Optional.of(roleWithName(RoleNames.USER)));
         when(userRepository.save(any(User.class))).thenThrow(new DataIntegrityViolationException("duplicate key"));
@@ -163,6 +259,7 @@ class UserProvisioningServiceTest {
 
     @Test
     void provisionOrRefresh_throwsWhenRoleNotYetSeeded() {
+        when(allowedEmailRepository.existsByEmailIgnoringCase("jean@example.com")).thenReturn(true);
         when(userRepository.findByIdWithRoleAndPermissions("sub-1")).thenReturn(Optional.empty());
         when(roleRepository.findByNameWithPermissions(RoleNames.USER)).thenReturn(Optional.empty());
 

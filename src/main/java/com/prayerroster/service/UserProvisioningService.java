@@ -3,6 +3,7 @@ package com.prayerroster.service;
 import com.prayerroster.config.ApplicationProperties;
 import com.prayerroster.domain.Role;
 import com.prayerroster.domain.User;
+import com.prayerroster.repository.AllowedEmailRepository;
 import com.prayerroster.repository.RoleRepository;
 import com.prayerroster.repository.UserRepository;
 import com.prayerroster.security.RoleNames;
@@ -11,6 +12,7 @@ import java.util.Objects;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.security.oauth2.server.resource.InvalidBearerTokenException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
@@ -20,6 +22,12 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Loads or provisions the local {@link User} for a validated Google identity. Called on every
  * authenticated request's authority resolution (see {@code DynamicAuthoritiesService}), so the
  * fast path (existing, unchanged user) does exactly one read and no write.
+ * <p>
+ * An identity whose email is unverified, or whose local user has been deactivated, is denied
+ * outright - {@link InvalidBearerTokenException} means no {@code Authentication} is ever produced,
+ * so the request is rejected with 401 rather than merely resolving to an empty authority set. That
+ * distinction matters: authenticated-but-unauthorized still reaches every {@code /api/me/**}
+ * endpoint, which are deliberately not permission-gated.
  * <p>
  * The SUPER_ADMIN bootstrap check ({@code application.security.initial-super-admin-email}) only
  * ever runs at row creation - never re-evaluated on later logins, so a later manual demotion of
@@ -32,26 +40,54 @@ public class UserProvisioningService {
 
     private final UserRepository userRepository;
     private final RoleRepository roleRepository;
+    private final AllowedEmailRepository allowedEmailRepository;
     private final ApplicationProperties applicationProperties;
     private final TransactionTemplate requiresNewTransactionTemplate;
 
     public UserProvisioningService(
         UserRepository userRepository,
         RoleRepository roleRepository,
+        AllowedEmailRepository allowedEmailRepository,
         ApplicationProperties applicationProperties,
         PlatformTransactionManager transactionManager
     ) {
         this.userRepository = userRepository;
         this.roleRepository = roleRepository;
+        this.allowedEmailRepository = allowedEmailRepository;
         this.applicationProperties = applicationProperties;
         this.requiresNewTransactionTemplate = new TransactionTemplate(transactionManager);
         this.requiresNewTransactionTemplate.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
     }
 
     public User provisionOrRefresh(GoogleIdentity identity) {
-        return userRepository.findByIdWithRoleAndPermissions(identity.sub()).map(user -> refreshProfileIfChanged(user, identity)).orElseGet(
-            () -> createUserSafely(identity)
-        );
+        if (!identity.emailVerified()) {
+            throw new InvalidBearerTokenException("Google account email is not verified");
+        }
+        return userRepository
+            .findByIdWithRoleAndPermissions(identity.sub())
+            .map(user -> refreshAdmittedUser(user, identity))
+            .orElseGet(() -> createUserSafely(requireAdmitted(identity)));
+    }
+
+    /**
+     * The allowlist governs first admission only, so it is consulted solely on the path that would
+     * create a row. The bootstrap super-admin email is an implicit entry, otherwise the very first
+     * sign-in against an empty database could never succeed.
+     */
+    private GoogleIdentity requireAdmitted(GoogleIdentity identity) {
+        String bootstrapEmail = applicationProperties.getSecurity().getInitialSuperAdminEmail();
+        boolean bootstrap = bootstrapEmail != null && bootstrapEmail.equalsIgnoreCase(identity.email());
+        if (!bootstrap && !allowedEmailRepository.existsByEmailIgnoringCase(identity.email())) {
+            throw new InvalidBearerTokenException("Email address is not invited");
+        }
+        return identity;
+    }
+
+    private User refreshAdmittedUser(User user, GoogleIdentity identity) {
+        if (!user.isActive()) {
+            throw new InvalidBearerTokenException("User account is deactivated");
+        }
+        return refreshProfileIfChanged(user, identity);
     }
 
     private User refreshProfileIfChanged(User user, GoogleIdentity identity) {
@@ -66,6 +102,10 @@ public class UserProvisioningService {
         }
         if (!Objects.equals(user.getLastName(), identity.lastName())) {
             user.setLastName(identity.lastName());
+            changed = true;
+        }
+        if (!Objects.equals(user.getImageUrl(), identity.imageUrl())) {
+            user.setImageUrl(identity.imageUrl());
             changed = true;
         }
         return changed ? userRepository.save(user) : user;
@@ -93,6 +133,7 @@ public class UserProvisioningService {
         user.setEmail(identity.email());
         user.setFirstName(identity.firstName());
         user.setLastName(identity.lastName());
+        user.setImageUrl(identity.imageUrl());
         user.setActive(true);
         user.setLangKey("fr");
         user.setRole(resolveInitialRole(identity.email()));
