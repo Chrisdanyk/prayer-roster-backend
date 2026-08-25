@@ -4,6 +4,8 @@ import com.prayerroster.config.ApplicationProperties;
 import com.prayerroster.service.dto.GoogleTokenResponse;
 import com.prayerroster.web.rest.errors.GoogleAuthenticationException;
 import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -18,6 +20,8 @@ import org.springframework.web.client.RestClientException;
  */
 @Service
 public class GoogleTokenExchangeService {
+
+    private static final Logger LOG = LoggerFactory.getLogger(GoogleTokenExchangeService.class);
 
     private final RestClient restClient;
     private final GoogleDiscoveryService discoveryService;
@@ -63,8 +67,12 @@ public class GoogleTokenExchangeService {
                 .retrieve()
                 .body(Map.class);
         } catch (RestClientException e) {
-            // Deliberately excludes Google's response body, which can echo the code back.
-            throw new GoogleAuthenticationException("Google rejected the authorization code exchange", e);
+            // The cause is deliberately NOT attached: ExceptionTranslator builds the ProblemDetail's
+            // "detail" from the cause chain, so chaining here would republish Google's raw response
+            // body - which can echo the authorization code - to an unauthenticated caller. Logged
+            // server-side instead, where diagnosing a failed exchange actually happens.
+            LOG.warn("Google rejected the authorization code exchange: {}", e.getMessage());
+            throw new GoogleAuthenticationException("Google rejected the authorization code exchange");
         }
     }
 }

@@ -80,7 +80,14 @@ class GoogleTokenExchangeServiceTest {
             .expect(requestTo(TOKEN_ENDPOINT))
             .andRespond(withBadRequest().body("{\"error\":\"invalid_grant\",\"code\":\"secret-code-1\"}").contentType(MediaType.APPLICATION_JSON));
 
-        assertThatThrownBy(() -> service.exchange("secret-code-1", "verifier-1")).hasMessageNotContaining("secret-code-1");
+        // The cause must not be attached: ExceptionTranslator derives the ProblemDetail's "detail"
+        // from the cause chain, so a chained RestClientException republishes Google's raw body to an
+        // unauthenticated caller. Asserting on the message alone missed this - it took a live run to
+        // see the leak in an actual 502.
+        assertThatThrownBy(() -> service.exchange("secret-code-1", "verifier-1"))
+            .isInstanceOf(GoogleAuthenticationException.class)
+            .hasMessageNotContaining("secret-code-1")
+            .hasNoCause();
     }
 
     @Test
