@@ -45,8 +45,7 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
 - [x] **Sprint 3 — Weekly Prayer Configuration**: `WeeklyPrayerConfiguration`/`Day` versioned
       template (no redundant `active` boolean - "current" is derived from `effective_to IS NULL`,
       the single source of truth). Found and fixed a real bug before it could bite: a plain unique
-      index on `effective_to` would **not** have enforced "at most one current version" in Postgres
-      - NULLs are distinct from each other there, so multiple NULL rows would've been allowed. Used
+      index on `effective_to` would **not** have enforced "at most one current version" in Postgres - NULLs are distinct from each other there, so multiple NULL rows would've been allowed. Used
       a partial unique index on a constant expression (`UNIQUE ((true)) WHERE effective_to IS NULL`)
       instead, and proved it actually rejects a second current row via a live raw-SQL test, not just
       by eyeballing the DDL. `PUT /api/prayer-config/weekly` creates a new version and closes the
@@ -65,7 +64,7 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       setting entirely in memory against one query for the whole version history - O(1) queries
       regardless of period length, never one query per date. Fully validates the whole period
       up front before writing anything, so a failure never leaves partial/orphaned rows. `POST
-      /api/rosters/generate`, `GET /api/rosters[/{id}]`, `GET /api/prayer-sessions[/{id}]`, all
+    /api/rosters/generate`, `GET /api/rosters[/{id}]`, `GET /api/prayer-sessions[/{id}]`, all
       N+1-safe. 27 new tests (134/134 total), JaCoCo gate green (27 classes, 100%). Live-verified
       end-to-end - including proving the `ux_prayer_session_date` and
       `ux_prayer_assignment_session_id_role` constraints actually reject violations, not just that
@@ -105,14 +104,14 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       `PREACHER` slot) and the roster auto-published; deactivating the only preacher-capable user and
       regenerating produced `RosterGeneration.status = INFEASIBLE` with
       `errorMessage = "moderatorAndPreacherMustDiffer: 1 violation(s); userMustHavePreachingCapability:
-      1 violation(s)"` and the roster correctly stayed `DRAFT`. Also hit and worked around a local
+    1 violation(s)"` and the roster correctly stayed `DRAFT`. Also hit and worked around a local
       environment quirk unrelated to the app itself: a native macOS Postgres was already listening on
       127.0.0.1:5432, shadowing the Docker container's port-forward - moved verification to port 5433.
 - [x] **Sprint 6 — Rescheduling**: extracted `RosterSolvingService` (the shared "solve then apply the
       outcome" logic from Sprint 5, parameterized by which `RosterStatus` to fall back to on
       infeasible - `DRAFT` for initial generation, `REQUIRES_RESCHEDULING` for an already-published
       roster) so generation and rescheduling never duplicate that logic. Detection is event-driven:
-      `UserAvailabilityService` (create/update, not cancel - becoming *more* available never
+      `UserAvailabilityService` (create/update, not cancel - becoming _more_ available never
       invalidates an existing assignment) and `UserManagementService` (deactivation only, not
       reactivation) publish plain `ApplicationEventPublisher` events, picked up by
       `ReschedulingDetectionListener` via `@TransactionalEventListener(phase = AFTER_COMMIT)` -
@@ -126,15 +125,15 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       the already-seeded `PERM_ROSTER_RESCHEDULE` permission) reuses the exact same
       `ReschedulingService.reschedule()` entry point to force a retry or re-attempt after a failed
       auto-reschedule, using whatever sessions are currently flagged rather than taking its own scope.
-      Weekly-configuration changes are deliberately *not* a detection trigger: session requirements
+      Weekly-configuration changes are deliberately _not_ a detection trigger: session requirements
       are snapshotted at generation time and never retroactively altered by a later config edit (see
       Sprint 4), so there's structurally nothing for a config change to invalidate.
       Found and fixed one real, serious bug via live testing - unit tests could not have caught
       this, since Mockito never exercises real Spring transaction management: calling an
       `@Transactional` service method from inside a `@TransactionalEventListener(phase =
-      AFTER_COMMIT)` callback relies on Spring correctly resolving "no transaction is active right
+    AFTER_COMMIT)` callback relies on Spring correctly resolving "no transaction is active right
       now" at that exact moment to start a fresh one. In practice that resolution was unreliable
-      immediately after the triggering transaction's own commit - the reschedule *appeared* to
+      immediately after the triggering transaction's own commit - the reschedule _appeared_ to
       succeed (a real Timefold solve ran, a sequence value was consumed for the new
       `RosterGeneration` row, the in-memory `RosterDTO` reflected the update) but the write was never
       durably committed, with no exception anywhere to catch or log. Fixed by giving
@@ -152,9 +151,9 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       real Postgres, including the bug above and its fix: submitting availability for an
       already-assigned user on a `PUBLISHED` roster triggered detection, a real re-solve, and a
       republish with the conflicting session correctly reassigned; a second, immediately-following
-      availability submission that left *no* remaining moderator-capable candidate for that day
+      availability submission that left _no_ remaining moderator-capable candidate for that day
       correctly came back `INFEASIBLE` and left the roster `REQUIRES_RESCHEDULING` rather than
-      applying a broken partial solution; every unaffected session's assignment (across *two*
+      applying a broken partial solution; every unaffected session's assignment (across _two_
       successive reschedule attempts) was proven byte-for-byte unchanged, confirming pinning holds.
 - [x] **Sprint 7 — Notifications & Reminders**: `Notification` (in-app record and email side-effect
       tracked on the same row - `messageKey` + a locale-independent JSON `params` map, resolved to
@@ -171,11 +170,11 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       opted out - needed to avoid either misusing `SENT` for something never sent, or leaving the row
       stuck at `PENDING` forever inviting endless useless retries. `ReminderService`'s sweep reuses
       `UserProvisioningService`'s established idempotent-insert pattern: `PROPAGATION_REQUIRES_NEW` +
-      `saveAndFlush()` per assignment to force the unique-constraint violation to surface *before* any
+      `saveAndFlush()` per assignment to force the unique-constraint violation to surface _before_ any
       notification gets created from it, catching `DataIntegrityViolationException` as a silent
       "already sent" no-op. ShedLock (`shedlock-spring`/`-provider-jdbc-template`) guards both the
       reminder sweep and the email-retry sweep against wasted duplicate work if the app ever runs more
-      than one instance - explicitly *not* the correctness guarantee, that's the ledger constraint.
+      than one instance - explicitly _not_ the correctness guarantee, that's the ledger constraint.
       `RosterSolvingService` now diffs each assignment's user before/after a feasible solve and
       notifies the newly-assigned user and (if different) whoever lost the slot; simplified away a
       second dead `if (newUser != null)` guard once the coverage gate flagged it as unreachable - a
@@ -189,7 +188,7 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       post-solve value, making every case look like "no change." Fixed with a `solvedClone()` helper
       documented for future contributors. The production bug - found only by live verification, since
       Mockito-mocked repositories never validate derived-query syntax: `ReminderConfigurationRepository
-      .existsByDaysBefore(Integer)` failed at real `JpaRepository` initialization with "No property
+    .existsByDaysBefore(Integer)` failed at real `JpaRepository` initialization with "No property
       'days' found for type 'ReminderConfiguration'" - Spring Data's parser split "DaysBefore" into
       property `days` + the reserved `Before` (date-comparison) keyword, since a whole-word
       `daysBefore` property isn't distinguishable from that split. Fixed with an explicit `@Query`.
@@ -219,7 +218,7 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       through one new `PrayerAssignmentService.findOwnUpcoming` (self-service, authenticated-only, no
       permission gate - same reasoning as every other `/api/me/**` resource) so the "upcoming" window
       (today .. +6 months, generous relative to the ~2-month rolling generation horizon) is defined in
-      exactly one place. Both PDF endpoints resolve the *requesting* user's own `langKey` to a
+      exactly one place. Both PDF endpoints resolve the _requesting_ user's own `langKey` to a
       `Locale` (falling back to French if somehow unauthenticated or not found) via the same pattern
       Sprint 7 established for notifications - a French-speaking admin gets a French roster PDF, an
       English-speaking user gets their English calendar.
@@ -272,6 +271,56 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       This closes out all 9 sprints in the roadmap - see docs/phase1-architecture.md's "Next Steps" for
       the closing summary.
 
+- [x] **Sprint 10 — Backend-Owned Authentication & Admission Control**: the backend is now a
+      confidential OAuth client. `GET /api/auth/google/url` builds Google's authorization URL with
+      PKCE (S256) and a single-use, five-minute `state`; `GET /api/auth/google/callback` consumes the
+      state and exchanges the code server-side, returning the ID token in the response body. Endpoint
+      URLs are discovered from the issuer's OIDC metadata rather than hardcoded, so `GOOGLE_ISSUER`
+      keeps working and a mock provider could be substituted later. Token _validation_ is completely
+      unchanged - the result is an ordinary Google ID token flowing through the existing
+      `AudienceValidator`/`PERM_*` pipeline, which was the whole point of choosing this over a session
+      cookie: the flow exercises production code rather than a parallel test-only path. This resolves
+      the architecture doc's open assumption that `GOOGLE_CLIENT_SECRET` might not be needed
+      server-side; it is. Deliberately out of scope: refresh tokens (an hour-long token renews via a
+      redirect that is silent while the Google session is live, and nothing sensitive is then stored
+      at rest) and a browser-app landing, since no frontend exists yet.
+      Designing the flow surfaced a problem that had to ship with it rather than after: **nothing
+      restricted who could authenticate**. Any Google account completing the flow was provisioned
+      `active`, and while the `USER` role holds no permissions, every `/api/me/**` endpoint is
+      deliberately permission-free - so a stranger could read `/api/account` and _write_ availability
+      records and notification preferences. Only `canModerate`/`canPreach` defaulting to `false` kept
+      it from being severe, since `findAllEligibleActive()` could never draw a stranger into a roster.
+      Until now this was masked entirely by there being no way to obtain a token; the new endpoints
+      remove that accident. Admission is therefore invite-only via a new `allowed_email` table
+      (`/api/allowed-emails`, `ADMIN` gaining `USER_CREATE` while `USER_DELETE` stays `SUPER_ADMIN`).
+      A separate table rather than pre-created `User` rows because `User.id` _is_ the Google `sub`,
+      unknowable until first sign-in. The allowlist governs first admission only - `active` governs
+      afterwards, keeping one mechanism per concern instead of two revocation paths that can disagree.
+      **Found and fixed a live security bug along the way**, unrelated to the new flow and present on
+      `develop` since Sprint 2: `DynamicAuthoritiesService` returned an empty authority set for an
+      inactive user, which strips authorities but does _not_ prevent authentication - the converter
+      still built a `JwtAuthenticationToken`, `.authenticated()` passed, and **a deactivated user kept
+      full access to every `/api/me/**` endpoint** and could still submit availability. Sprint 6 treats
+    deactivation as removal and triggers rescheduling on it, so the lockout was always meant to be
+    complete. Fixed by denying at provisioning (`InvalidBearerTokenException`-> 401, no
+   `Authentication`built at all), which also covers unverified emails and uninvited addresses at
+    the same choke point. That made the`isActive()`branch unreachable, so it was deleted rather
+    than tested around, as in sprints 3, 5 and 7.
+    **Also found that`./mvnw verify`had been failing since Sprint 3** - proven by stashing all work
+    and running it on a clean tree: two`Optional.get()`calls in`WeeklyPrayerConfigurationService`
+    violate the modernizer plugin, which aborts the build *before* JaCoCo runs. The "JaCoCo gate
+    green" claims in sprints 3-9 cannot have come from this command. Fixed in its own commit
+    (`orElseThrow()`), and `verify`now completes end-to-end for the first time.
+    Two smaller notes:`UriComponents.encode()`leaves`:`and`/`intact because RFC 3986 permits
+    them in a query component, so authorization-URL values are encoded individually - Google's
+    documented examples pass a fully-encoded`redirect_uri`, and an unencoded one would break if the
+    configured URI ever carried its own query string. And `email_verified`is read with
+   `Boolean.TRUE.equals`, failing closed on a missing or non-boolean claim.
+    48 new tests (312/312 total), JaCoCo gate genuinely green - verified by a `verify`run that
+    actually reaches it. Live verification against a real Postgres is **pending**: it needs a Google
+    OAuth client (id, secret, and`http://localhost:8080/api/auth/google/callback` registered as a
+      redirect URI) that only the project owner can create.
+
 ## Local environment notes
 
 - **Docker runtime is Colima**, not Docker Desktop (`docker context use colima`, or just leave it -
@@ -283,7 +332,7 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
   and actually reach the `coverage-check` execution. Plain `mvn test` (no ITs) is enough for fast
   local iteration and does reflect real coverage.
 - **JaCoCo gotcha, already fixed but worth knowing**: a `<rule><excludes>` list under an
-  `element=BUNDLE` rule does *not* filter the bundle-wide ratio the coverage gate checks - it's
+  `element=BUNDLE` rule does _not_ filter the bundle-wide ratio the coverage gate checks - it's
   silently ignored for that element type. The real fix is the plugin-level `<configuration><excludes>`
   block (class-file globs, `/`-delimited) in the same `jacoco-maven-plugin` block, which filters at
   analysis time and does work. Keep both lists in sync when adding new excluded packages.

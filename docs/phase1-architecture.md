@@ -12,6 +12,7 @@ This document is **Phase 1 only** — architecture and domain design. No code ha
 implementation starts in later phases after this is approved.
 
 Three architecture forks were resolved with the project owner before writing this doc:
+
 - **Auth**: backend is a stateless **OAuth2 Resource Server** validating Google-issued ID tokens
   (JWT) as Bearer tokens. No server-side login redirect/session — a separate frontend/SPA performs
   the Google sign-in and forwards the ID token.
@@ -36,7 +37,7 @@ Three architecture forks were resolved with the project owner before writing thi
 - **Java 21 LTS, pinned explicitly** (not whatever's newest on the machine — JHipster 8.11.0/Spring
   Boot 3.x is built and tested against Java 21/22, not the very latest JDK feature releases). Use a
   version manager (`sdkman`/`jenv`) to pin the project to 21 regardless of the system default.
-- **Node**: JHipster 8.11.0 requires `^18.19.0 || >=20.6.1` — notably *older/looser* than 9.x's
+- **Node**: JHipster 8.11.0 requires `^18.19.0 || >=20.6.1` — notably _older/looser_ than 9.x's
   `^22.18.0 || >=24.11.0`, so this also avoids forcing a Node upgrade just to run the generator.
 - **Maven** (better first-class Timefold/plugin ecosystem support than Gradle here)
 - **Application type**: monolith, **backend-only** (`--skip-client`) — this is explicitly "the backend"; no Angular/React/Vue scaffold generated
@@ -53,6 +54,7 @@ Evaluated every entity the original spec listed; a few are deliberately **collap
 overengineering, with the reasoning stated inline.
 
 ### User (reuse JHipster's OAuth2 `User`, don't duplicate)
+
 JHipster's OAuth2-mode `User` entity already has `id` (String — populated from the IdP's `sub`
 claim), `login`, `firstName`, `lastName`, `email`, `langKey`, `activated` (boolean), plus JHipster
 audit fields. This directly satisfies the "extend rather than duplicate" requirement — **`id` IS the
@@ -60,6 +62,7 @@ stable Google subject**, no separate `googleSubject` column needed, and `activat
 directly as the active/inactive flag instead of adding a duplicate field.
 
 Added directly on `User`:
+
 - `role` — `@ManyToOne` to our own `Role` entity (nullable only transiently before bootstrap logic runs)
 - `canModerate`, `canPreach` — booleans, **not** a separate `ServiceCapability` entity/join table.
   Reasoning: it's a small, fixed, closed set (2 values today), read on every solver run and every
@@ -73,10 +76,12 @@ static Spring Security `ROLE_*` strings, not our dynamic permission graph. See S
 RBAC Design, for how `GrantedAuthority`s are computed instead.
 
 ### Role, Permission
+
 - `Role` (id, name unique, description, audit fields) — many-to-many to `Permission` via `role_permission`
 - `Permission` (id, code unique, description) — bulk-loaded idempotently from `src/main/resources/config/permissions.json` at startup (upsert by code; DB is source of truth after)
 
 ### WeeklyPrayerConfiguration (the recurring template)
+
 - `WeeklyPrayerConfiguration` (id, `effectiveFrom`, `effectiveTo` nullable, active)
 - `WeeklyPrayerConfigurationDay` (id, configuration FK, `dayOfWeek` enum, `requiresPreacher` boolean) — exactly 7 rows per version, `unique(configuration_id, day_of_week)`
 
@@ -86,6 +91,7 @@ Changing the pattern **creates a new version** (new `WeeklyPrayerConfiguration` 
 date — this is what makes historical rosters immune to later config changes.
 
 ### PrayerSession (generated, actual dated data)
+
 `id, date (unique), dayOfWeek, requiresModerator, requiresPreacher, roster FK, requiresRescheduling (bool)`.
 `requiresModerator`/`requiresPreacher` are **snapshotted** from the config version active at
 generation time — so a later config change never retroactively alters an already-generated session.
@@ -98,6 +104,7 @@ explain the choice. **Decision: separate `PrayerAssignment` entity.**
 `id, session FK, role (MODERATOR|PREACHER), user (nullable FK — the @PlanningVariable), locked (bool), generation FK, unique(session_id, role)`
 
 Why this beats two nullable fields directly on `PrayerSession`:
+
 1. Fairness/consecutive-day/weekly-preach-limit constraints all reduce to one uniform stream over
    "assignments" instead of two parallel streams (one per field) that then need manually unioning.
 2. It generalizes if a role is ever added later (e.g. musician) — just another `PrayerAssignment` row, no planning-entity shape change.
@@ -110,21 +117,24 @@ moderation-only days" is **structurally guaranteed by generation**, not somethin
 enforce — one less runtime constraint, and it's impossible to violate by construction.
 
 ### UserAvailability
+
 `id, user FK, startDate, endDate, reason (nullable), status (ACTIVE|CANCELLED), audit fields`. Validated
 at the service layer: `startDate <= endDate`, no overlapping ACTIVE ranges per user. (A Postgres `EXCLUDE USING gist`
 constraint could harden this further later; not needed for correctness at Phase 1.)
 
 ### Roster vs RosterGeneration (the "evaluate both" ambiguity, resolved)
+
 - **`Roster`** = the mutable lifecycle container for a planning period: `id, periodFrom, periodTo, status (DRAFT|PUBLISHED|REQUIRES_RESCHEDULING|ARCHIVED), publishedAt`. Owns the `PrayerSession`s in its date range.
 - **`RosterGeneration`** = an **immutable, append-only audit row per solver invocation** against a Roster: `id, roster FK, triggeredAt, triggeredBy, trigger (SCHEDULED_CRON|MANUAL|RESCHEDULE), planningFrom, planningTo, solverDurationMs, hardScore, softScore, feasible, status (RUNNING|COMPLETED|FAILED|INFEASIBLE), regenerated, rescheduleReason, errorMessage`.
 
-Every solve (initial generation *or* a reschedule) writes a new `RosterGeneration` row — this is what
+Every solve (initial generation _or_ a reschedule) writes a new `RosterGeneration` row — this is what
 gives full audit history without ever needing to overwrite or lose a past run.
 
 ### Notification, NotificationPreference, ReminderConfiguration, ReminderSent
+
 - **`Notification`** — single entity, in-app record **and** email side-effect tracked on the same row: `recipient FK, type enum, messageKey + JSON params (resolved to text at read time, in the user's locale — never pre-rendered, so it stays correct even if locale changes), relatedSession/relatedAssignment FK nullable, read (bool), readAt, emailStatus (PENDING|SENT|FAILED), emailSentAt, retryCount`. One table instead of a separate email-log table — kept deliberately simple.
 - **`NotificationPreference`** (1:1 per user) — just channel opt-in (`emailEnabled`).
-- **`ReminderConfiguration`** — **global, admin-managed** list of offsets (`daysBefore`, `active`), seeded `[7, 1]`. *Assumption*: reminder timing reads as system-wide configurable policy, not per-user, so it's one shared admin-editable list rather than per-user settings.
+- **`ReminderConfiguration`** — **global, admin-managed** list of offsets (`daysBefore`, `active`), seeded `[7, 1]`. _Assumption_: reminder timing reads as system-wide configurable policy, not per-user, so it's one shared admin-editable list rather than per-user settings.
 - **`ReminderSent`** (`assignment FK, reminderOffset FK, sentAt`, **unique(assignment_id, reminder_offset_id)**) — the dedup ledger. The reminder job does insert-or-skip against this unique constraint inside the same transaction as sending, which combined with ShedLock on the job itself makes reminders idempotent even under concurrent/duplicate firing.
 
 ---
@@ -181,13 +191,13 @@ create 1 or 2 `PrayerAssignment` rows (MODERATOR always; PREACHER only if `requi
 - **Value range**: a single broad range (all active eligible users), with capability matching enforced
   via hard constraints rather than a role-filtered value range. At this scale (dozens of users, ~30–60
   sessions/month) solver efficiency from filtered ranges is a non-issue; simplicity wins for Phase 1.
-- **Inactive users**: filtered out before the solve even starts (never enter `eligibleUsers`), *plus*
+- **Inactive users**: filtered out before the solve even starts (never enter `eligibleUsers`), _plus_
   kept as a defensive hard constraint in case of stale data.
 - **Unavailability**: cannot be pre-filtered globally since it's per-date — implemented as a real
   constraint-stream join between assignment->user->`UserAvailability` and `session.date`.
 - **Rescheduling minimization**: implemented via **`@PlanningPin`**, not a soft penalty constraint.
   Unaffected assignments on a published roster are pinned (Timefold structurally cannot move them),
-  which is a *hard guarantee* stronger than a soft penalty — so a "minimize changes to published
+  which is a _hard guarantee_ stronger than a soft penalty — so a "minimize changes to published
   roster" constraint is **not needed as a runtime constraint**; pinning already fully satisfies
   "don't unnecessarily reshuffle unaffected assignments." Only sessions flagged
   `requiresRescheduling` are unpinned for a reschedule solve.
@@ -196,15 +206,15 @@ create 1 or 2 `PrayerAssignment` rows (MODERATOR always; PREACHER only if `requi
 
 ## 7. Hard Constraints (Constraint Streams, `HardSoftScore`)
 
-| Constraint | Logic |
-|---|---|
-| `everyAssignmentMustBeFilled` | `assignment.user == null` -> penalize. Covers both "moderator required" and "preacher required when configured", since rows only exist when required. |
-| `moderatorAndPreacherMustDiffer` | same session, MODERATOR.user == PREACHER.user (both non-null) -> penalize |
-| `preacherAtMostOncePerIsoWeek` | group by (user, role=PREACHER, ISO week of session.date), penalize any group with count > 1 |
-| `inactiveUserCannotBeAssigned` | defensive re-check even though pre-filtered |
-| `unavailableUserCannotBeAssigned` | join to `UserAvailability` (status=ACTIVE) covering `session.date` |
-| `userMustHaveModerationCapability` | role=MODERATOR && !user.canModerate |
-| `userMustHavePreachingCapability` | role=PREACHER && !user.canPreach |
+| Constraint                         | Logic                                                                                                                                                 |
+| ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `everyAssignmentMustBeFilled`      | `assignment.user == null` -> penalize. Covers both "moderator required" and "preacher required when configured", since rows only exist when required. |
+| `moderatorAndPreacherMustDiffer`   | same session, MODERATOR.user == PREACHER.user (both non-null) -> penalize                                                                             |
+| `preacherAtMostOncePerIsoWeek`     | group by (user, role=PREACHER, ISO week of session.date), penalize any group with count > 1                                                           |
+| `inactiveUserCannotBeAssigned`     | defensive re-check even though pre-filtered                                                                                                           |
+| `unavailableUserCannotBeAssigned`  | join to `UserAvailability` (status=ACTIVE) covering `session.date`                                                                                    |
+| `userMustHaveModerationCapability` | role=MODERATOR && !user.canModerate                                                                                                                   |
+| `userMustHavePreachingCapability`  | role=PREACHER && !user.canPreach                                                                                                                      |
 
 "No preacher on moderation-only days" is **structurally guaranteed** by generation (see Section 2,
 PrayerAssignment — the Timefold planning entity), documented but not
@@ -212,12 +222,12 @@ implemented as a runtime constraint.
 
 ## 8. Soft Constraints
 
-| Constraint | Logic |
-|---|---|
-| `balanceModerationAssignments` | `loadBalance` over users with `canModerate=true` |
-| `balancePreachingAssignments` | `loadBalance` over users with `canPreach=true` |
-| `avoidConsecutiveAssignments` | penalize same user assigned (any role) on two consecutive dates |
-| `minimizeAssignmentImbalance` | overall `loadBalance` across total assignment count, lower weight than the two role-specific ones — catches gross imbalance across the whole roster |
+| Constraint                     | Logic                                                                                                                                               |
+| ------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `balanceModerationAssignments` | `loadBalance` over users with `canModerate=true`                                                                                                    |
+| `balancePreachingAssignments`  | `loadBalance` over users with `canPreach=true`                                                                                                      |
+| `avoidConsecutiveAssignments`  | penalize same user assigned (any role) on two consecutive dates                                                                                     |
+| `minimizeAssignmentImbalance`  | overall `loadBalance` across total assignment count, lower weight than the two role-specific ones — catches gross imbalance across the whole roster |
 
 Fairness is naturally eligibility-scoped since the value range only ever contains active,
 capability-matching users — a moderate-only user is never compared against preaching load. **Known
@@ -241,10 +251,19 @@ Two layers, kept deliberately separate to avoid colliding with JHipster's built-
    still reflecting permission changes promptly.
 2. **JHipster's own infrastructure gate**: JHipster's generated `SecurityConfiguration` protects
    `/management/**` (actuator: health, metrics, loggers) with the **static** `ROLE_ADMIN` authority.
-   We keep that mechanism *only* for this narrow purpose — it is **not** our business `ADMIN` domain
+   We keep that mechanism _only_ for this narrow purpose — it is **not** our business `ADMIN` domain
    role. The converter additionally grants the literal `ROLE_ADMIN` authority **only** to users whose
    domain `Role.name == SUPER_ADMIN`. Business `ADMIN` gets `PERM_*` authorities from its assigned
    permissions and nothing from JHipster's static role at all.
+
+**Denial happens at authentication, not authorization** (added after implementation). An identity
+that is unverified, uninvited, or belongs to a deactivated user causes `UserProvisioningService` to
+throw `InvalidBearerTokenException`, so no `Authentication` is ever built and the request is refused
+with 401. This closed a real gap: previously an inactive user merely resolved to an _empty authority
+set_, which still counts as authenticated — and since every `/api/me/**` endpoint is deliberately
+permission-free, a deactivated person retained full access to their own availability and preferences.
+Because provisioning now refuses first, the `isActive()` branch in `DynamicAuthoritiesService` became
+unreachable and was deleted.
 
 This means "ADMIN" as a word means two unrelated things in the codebase, deliberately: our seeded
 domain `Role` row named `ADMIN` (fully dynamic, editable, permission-driven), and Spring's static
@@ -261,14 +280,37 @@ reuse it for both purposes.
 - **Required addition**: a custom `OAuth2TokenValidator<Jwt>` checking the `aud` claim equals
   `GOOGLE_CLIENT_ID`, combined via `DelegatingOAuth2TokenValidator` with Spring's defaults — issuer-uri
   alone does **not** validate audience, and skipping this is a real security gap for Google-as-resource-server setups.
-- Frontend is expected to use Google Identity Services (client-side "Sign in with Google") to obtain
-  an **ID token** (a JWT) and send it as `Authorization: Bearer <id_token>` — not the opaque access
-  token, which Google doesn't issue as a JWT. `GOOGLE_CLIENT_SECRET` likely isn't needed server-side
-  under this pattern since we never perform the code exchange ourselves; flagging as an assumption to confirm once the frontend's actual flow is known.
+- **The backend performs the authorization-code exchange itself** (revised — this section originally
+  specified that it never would). `GET /api/auth/google/url` builds Google's authorization URL with
+  PKCE (S256) and a single-use `state` held for five minutes; `GET /api/auth/google/callback`
+  consumes the state, POSTs the code to Google's token endpoint with the client secret, and returns
+  the **ID token** in the response body. The endpoint URLs come from the issuer's OIDC metadata
+  rather than being hardcoded, so `GOOGLE_ISSUER` stays meaningful.
+- The token that comes back is an ordinary Google ID token, so **token validation is unchanged**: it
+  still travels as `Authorization: Bearer <id_token>` through `AudienceValidator` and
+  `DynamicJwtAuthenticationConverter` exactly as a frontend-issued one would. That was the point of
+  choosing this shape over a session cookie — the flow exercises production code rather than a
+  parallel path, and it is what finally makes end-to-end authorization verifiable over real HTTP.
+- **`GOOGLE_CLIENT_SECRET` is therefore required**, resolving the assumption this section previously
+  flagged. `GOOGLE_REDIRECT_URI` must exactly match a redirect URI registered in the Google Cloud
+  console. The secret and the authorization code never leave the server; neither the code nor the
+  token is ever logged, and the token is returned in a body rather than a redirect URL so it does not
+  reach browser history or access logs.
+- **No refresh tokens.** ID tokens last about an hour and renewal means re-running the authorization
+  redirect, which is silent while the user holds a live Google session. Nothing sensitive is stored
+  at rest as a result.
+- **Admission is invite-only.** An identity with no local `User` row is provisioned only if its email
+  appears in `allowed_email` (managed at `/api/allowed-emails`, gated by `PERM_USER_CREATE` /
+  `PERM_USER_VIEW` / `PERM_USER_DELETE`); otherwise authentication is refused and **no row is
+  created**. The allowlist governs _first admission only_ — once a `User` exists, `active` governs,
+  so deleting an entry does not lock out someone who has already signed in. A separate table is
+  required because `User.id` is the Google `sub`, unknowable until first sign-in.
 - On each validated request, provision-or-load the local `User` by `id = sub` claim; assign `Role=USER`
-  by default.
+  by default. An identity whose `email_verified` claim is absent or false, whose email is not
+  admitted, or whose user is inactive is **denied outright** — see section 9.
 
 ### Super Admin bootstrap
+
 `INITIAL_SUPER_ADMIN_EMAIL` env var. On **first-ever creation** of a `User` row (not on every login —
 this matters: if SUPER_ADMIN is later reassigned away from this account, subsequent logins must not
 silently re-grant it), if `email` case-insensitively matches the configured value, assign
@@ -297,7 +339,7 @@ sweep, or lazily on read).
   inactive) and flags their `PrayerSession.requiresRescheduling = true`, moving the owning `Roster` to
   `REQUIRES_RESCHEDULING`.
 - **Re-solve then auto-publishes**: a solve runs automatically against a fresh `RosterSolution` scoped
-  to the affected Roster, where every `PrayerAssignment` on a session *not* flagged
+  to the affected Roster, where every `PrayerAssignment` on a session _not_ flagged
   `requiresRescheduling` is `@PlanningPin`-locked. Only flagged sessions' assignments are free
   variables. All hard constraints are re-validated; on success the Roster returns to `PUBLISHED`, a
   new `RosterGeneration(trigger=RESCHEDULE)` row is written, and both the removed and newly-assigned
@@ -372,8 +414,7 @@ Each module follows JHipster's per-feature convention internally (`domain`, `rep
 ## Assumptions flagged for review (safe defaults chosen, not yet confirmed)
 
 1. Reminder offsets (`[7, 1]` days) are **global, admin-configured policy**, not per-user settings.
-2. Google `CLIENT_SECRET` may end up unused server-side under the resource-server pattern — to confirm once the actual frontend flow is built.
-3. Fairness is balanced by raw assignment count among eligible users, not normalized by each user's availability-adjusted capacity in the period — a possible future refinement, not MVP scope.
+2. Fairness is balanced by raw assignment count among eligible users, not normalized by each user's availability-adjusted capacity in the period — a possible future refinement, not MVP scope.
 
 ---
 

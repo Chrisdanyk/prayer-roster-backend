@@ -17,6 +17,10 @@ a git repo, so sessions that start there must run everything below from `backend
 
 ## Commands
 
+The build requires **JDK 17** (`pom.xml` pins it; the enforcer rejects anything outside 17–24). If
+your default `java` is newer, every Maven command needs `JAVA_HOME` set, e.g.
+`export JAVA_HOME=$(/usr/libexec/java_home -v 17)`.
+
 ```bash
 ./mvnw                                      # run in dev profile (Postgres must be up)
 npm run docker:db:up                        # Postgres on 5432 (docker:db:down to tear down)
@@ -31,8 +35,8 @@ npm run backend:nohttp:test                 # checkstyle (nohttp rule)
 ./mvnw -Pprod clean verify                  # production jar
 ```
 
-Java is pinned to **17** in `pom.xml` (`<java.version>`), even though the architecture doc argues for
-21 — the pom is the truth. Node ≥22.15 is only needed for prettier/husky.
+The architecture doc argues for Java 21; the pom is the truth. Node ≥22.15 is only needed for
+prettier/husky.
 
 `husky` + `lint-staged` run `prettier --write` on commit.
 
@@ -55,15 +59,30 @@ established response is to delete the dead code, not to test around it.
 
 ## Architecture
 
-### Auth: stateless Google resource server
+### Auth: backend-owned Google sign-in, stateless validation
 
-JHipster's session/`oauth2Login`/client scaffolding was stripped out. A separate frontend does the
-Google sign-in and sends the **Google ID token** as `Authorization: Bearer`. `SecurityConfiguration`
-is resource-server-only, stateless, CSRF disabled. `AudienceValidator` checks `aud == GOOGLE_CLIENT_ID`
+JHipster's session/`oauth2Login`/client scaffolding was stripped out. `SecurityConfiguration` is
+resource-server-only, stateless, CSRF disabled. `AudienceValidator` checks `aud == GOOGLE_CLIENT_ID`
 (issuer-uri alone does not validate audience).
+
+The backend **obtains tokens itself** as a confidential OAuth client: `GET /api/auth/google/url`
+builds Google's authorization URL (PKCE S256, single-use five-minute `state`), and
+`GET /api/auth/google/callback` exchanges the code server-side and returns the ID token in the
+response body. Both are `permitAll`. Endpoint URLs come from the issuer's OIDC metadata via
+`GoogleDiscoveryService`, never hardcoded. There are no refresh tokens — renewal is a fresh
+authorization redirect. Clients still send `Authorization: Bearer <id_token>`, so validation is
+identical whether the token came from this flow or a frontend.
 
 `User.id` **is** the Google `sub` claim — there is no separate subject column, and Google issues no
 `preferred_username`, so never assume that claim.
+
+**Admission is invite-only and enforced at authentication, not authorization.**
+`UserProvisioningService` throws `InvalidBearerTokenException` (→ 401, no `Authentication` built) when
+`email_verified` is absent/false, when an unknown email is not in `allowed_email`, or when the user is
+inactive. Do not weaken this into an authorities check: an authenticated-but-unauthorized caller still
+reaches every `/api/me/**` endpoint, since those are deliberately permission-free — that exact
+mistake let deactivated users keep access until Sprint 10. The allowlist governs _first admission
+only_; `active` governs afterwards.
 
 ### Authorization: dynamic permissions, not roles
 
@@ -160,9 +179,11 @@ also add the field to `ApplicationProperties`.
 
 ## Environment variables
 
-`GOOGLE_CLIENT_ID` (audience validation), `GOOGLE_ISSUER` (defaults to `https://accounts.google.com`),
-`INITIAL_SUPER_ADMIN_EMAIL` — applied only on **first creation** of a user row, so a later manual
-demotion is never silently undone.
+`GOOGLE_CLIENT_ID` (audience validation), `GOOGLE_CLIENT_SECRET` and `GOOGLE_REDIRECT_URI` (required
+for the code exchange; the redirect URI must exactly match one registered in the Google Cloud
+console), `GOOGLE_ISSUER` (defaults to `https://accounts.google.com`), `INITIAL_SUPER_ADMIN_EMAIL` —
+applied only on **first creation** of a user row, so a later manual demotion is never silently undone,
+and treated as an implicit allowlist entry so the first sign-in works against an empty database.
 
 ## Definition of done
 
