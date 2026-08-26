@@ -430,17 +430,34 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       caught by the same grep sanity check the plan's own step prescribed, and removed alongside it.
       46 new tests across the six tasks (312 → 358), JaCoCo gate green throughout (each task's
       `./mvnw -o verify -DskipITs` run reached "All coverage checks have been met." before its commit).
-      **Live verification is pending** — not yet run against a real Postgres and a real Google account.
-      Outstanding, and all but one require a real signed ID token or a completed browser sign-in to
-      exercise (the exception is noted): the callback returns **302** to `/auth/callback?handoff=…`
-      with `FRONTEND_BASE_URL` set and the `Location` header carries no token; `POST /api/auth/exchange`
-      returns the token for that handoff and a replay of the same handoff returns 400; unsetting
-      `FRONTEND_BASE_URL` restores the JSON branch; editing a role's permissions changes an affected
-      user's access on the *next request* rather than 60 seconds later; and `GET
-      /api/rosters/{id}/generations` returns real solver scores for an authenticated `ROSTER_VIEW`
-      holder. (The one item that does not strictly need a token — confirming the Liquibase changelog
-      applies and the five retired permission rows are actually gone — only needs raw SQL against the
-      database, but was left for the same live-verification pass rather than checked separately here.)
+      **Live-verified end to end against a real Postgres and a real Google sign-in.** The Liquibase
+      changelog applied cleanly (25 -> 20 permissions, the five retired codes gone, zero orphaned
+      `role_permission` rows), and every new endpoint returned 401 unauthenticated.
+      The **login-CSRF fix was proven, not assumed**, which took a little care because a missing cookie
+      and an expired state surface the same `invalidState` error. Minting a live state and replaying it
+      twice with a deliberately bogus code separated them: without the cookie the callback returned
+      `error=invalidState` *before the code was ever used*, while with the cookie the same request
+      reached Google and came back 502. The difference in outcome is what proves the cookie binding is
+      the thing doing the rejecting.
+      The full browser flow then completed: the callback returned **302** to
+      `/auth/callback?handoff=…` with **no JWT anywhere in the Location header**, `POST
+      /api/auth/exchange` returned a genuine Google ID token (`email_verified=true`), and replaying
+      that handoff returned 400 `error.invalidHandoff`. A real Timefold solve produced
+      `GET /api/rosters/{id}/generations` = `trigger=MANUAL status=COMPLETED feasible=true hardScore=0
+      softScore=-202 solverDurationMs=67`.
+      **The `evictAll()` guarantee was isolated deliberately.** Assigning a user a role also evicts that
+      user, which would have masked the thing under test, so the probe changed a *role's* permissions
+      while leaving the user row untouched: a throwaway role holding `ROLE_VIEW` was stripped of it,
+      and the very next request returned 403 rather than serving a stale cache for the remaining TTL.
+      Two incidental findings from the run, neither a defect in the code. A state expired mid-test
+      because the browser round trip took 605s against a 300s TTL - the mechanism working as designed,
+      but a reminder that the two failure modes report identically. And a transient
+      `Connection reset` to Google's token endpoint produced a generic 502 with the detail confined to
+      the server log, which is the earlier leak fix holding up under an unplanned fault. That same
+      fault made a known gap concrete: `GoogleAuthenticationException` is not caught by the SPA
+      redirect handler, so an upstream failure - or simply refreshing the callback page, which
+      re-sends a spent code - still dead-ends the user on raw JSON at the backend origin. Left open
+      deliberately, recorded here rather than fixed in the same pass.
 
 ## Local environment notes
 
