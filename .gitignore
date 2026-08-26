@@ -151,3 +151,8 @@ Desktop.ini
 ######################
 coverage/
 .nyc_output/
+
+# Local dev launcher — contains credentials, never commit
+run-local.sh
+.env
+.env.local
