@@ -17,6 +17,7 @@ import com.prayerroster.service.dto.AuthorizationUrlResponse;
 import com.prayerroster.service.dto.GoogleTokenResponse;
 import com.prayerroster.web.rest.errors.BadRequestAlertException;
 import com.prayerroster.web.rest.errors.ExceptionTranslator;
+import com.prayerroster.web.rest.errors.GoogleAuthenticationException;
 import jakarta.servlet.http.Cookie;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -97,6 +98,34 @@ class GoogleAuthenticationResourceTest {
             .getHeader("Set-Cookie");
 
         assertThat(setCookie).containsIgnoringCase("Secure");
+    }
+
+    @Test
+    void getAuthorizationUrl_marksTheCookieSecureWhenTheFrontendBaseUrlIsHttps() throws Exception {
+        applicationProperties.getFrontend().setBaseUrl("https://app.example.com");
+        when(googleAuthenticationService.authorizationUrl()).thenReturn(new AuthorizationUrlResponse("https://accounts.google.com", "state-1"));
+
+        String setCookie = mockMvc
+            .perform(get("/api/auth/google/url"))
+            .andReturn()
+            .getResponse()
+            .getHeader("Set-Cookie");
+
+        assertThat(setCookie).containsIgnoringCase("Secure");
+    }
+
+    @Test
+    void getAuthorizationUrl_doesNotMarkTheCookieSecureWhenTheFrontendBaseUrlIsNotHttps() throws Exception {
+        applicationProperties.getFrontend().setBaseUrl("http://app.example.com");
+        when(googleAuthenticationService.authorizationUrl()).thenReturn(new AuthorizationUrlResponse("https://accounts.google.com", "state-1"));
+
+        String setCookie = mockMvc
+            .perform(get("/api/auth/google/url"))
+            .andReturn()
+            .getResponse()
+            .getHeader("Set-Cookie");
+
+        assertThat(setCookie).doesNotContainIgnoringCase("Secure");
     }
 
     @Test
@@ -292,6 +321,55 @@ class GoogleAuthenticationResourceTest {
             )
             .andExpect(status().isFound())
             .andExpect(header().string("Location", "https://app.example.com/auth/callback?error=invalidState"));
+    }
+
+    @Test
+    void callback_propagatesTheUpstreamFailureAsA502WhenNoFrontendIsConfigured() throws Exception {
+        when(googleAuthenticationService.completeLogin("code-1", "state-1")).thenThrow(
+            new GoogleAuthenticationException("Google rejected the authorization code exchange")
+        );
+
+        mockMvc
+            .perform(get("/api/auth/google/callback").param("code", "code-1").param("state", "state-1"))
+            .andExpect(status().isBadGateway());
+    }
+
+    @Test
+    void callback_redirectsToTheFrontendOnAnUpstreamGoogleFailureWhenConfigured() throws Exception {
+        applicationProperties.getFrontend().setBaseUrl("https://app.example.com");
+        when(googleAuthenticationService.completeLogin("code-1", "state-1")).thenThrow(
+            new GoogleAuthenticationException("Google rejected the authorization code exchange")
+        );
+
+        mockMvc
+            .perform(
+                get("/api/auth/google/callback")
+                    .param("code", "code-1")
+                    .param("state", "state-1")
+                    .cookie(new Cookie(STATE_COOKIE, "state-1"))
+            )
+            .andExpect(status().isFound())
+            .andExpect(header().string("Location", "https://app.example.com/auth/callback?error=upstreamFailure"));
+    }
+
+    @Test
+    void callback_clearsTheStateCookieSecurelyWhenTheFrontendBaseUrlIsHttps() throws Exception {
+        applicationProperties.getFrontend().setBaseUrl("https://app.example.com");
+        when(googleAuthenticationService.completeLogin("code-1", "state-1")).thenReturn(new GoogleTokenResponse("id-token", 3599));
+        when(handoffStore.issue(new GoogleTokenResponse("id-token", 3599))).thenReturn("handoff-1");
+
+        String setCookie = mockMvc
+            .perform(
+                get("/api/auth/google/callback")
+                    .param("code", "code-1")
+                    .param("state", "state-1")
+                    .cookie(new Cookie(STATE_COOKIE, "state-1"))
+            )
+            .andReturn()
+            .getResponse()
+            .getHeader("Set-Cookie");
+
+        assertThat(setCookie).containsIgnoringCase("Secure");
     }
 
     @Test

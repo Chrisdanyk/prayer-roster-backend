@@ -7,6 +7,7 @@ import com.prayerroster.service.dto.AuthorizationUrlResponse;
 import com.prayerroster.service.dto.ExchangeHandoffRequest;
 import com.prayerroster.service.dto.GoogleTokenResponse;
 import com.prayerroster.web.rest.errors.BadRequestAlertException;
+import com.prayerroster.web.rest.errors.GoogleAuthenticationException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -63,7 +64,7 @@ public class GoogleAuthenticationResource {
         AuthorizationUrlResponse authorizationUrl = googleAuthenticationService.authorizationUrl();
         response.addHeader(
             HttpHeaders.SET_COOKIE,
-            stateCookie(authorizationUrl.state(), STATE_COOKIE_MAX_AGE, request.isSecure()).toString()
+            stateCookie(authorizationUrl.state(), STATE_COOKIE_MAX_AGE, secureStateCookie(request)).toString()
         );
         return authorizationUrl;
     }
@@ -93,6 +94,13 @@ public class GoogleAuthenticationResource {
      * (denied consent, missing code, or invalid/mismatched state) redirects back to the SPA with
      * {@code ?error=<key>} instead of dead-ending the user on this origin's {@code problem+json}
      * body; with none configured, the 400 stays exactly as before.
+     *
+     * <p>{@link GoogleAuthenticationException} - thrown when Google's token endpoint itself fails or
+     * answers unusably, e.g. an already-spent authorization code re-sent by refreshing this page - is
+     * handled the same way: with a frontend configured it redirects to {@code
+     * ?error=upstreamFailure} rather than leaving the browser on this origin's 502 {@code
+     * problem+json} with no route back to the app; with none configured, the 502 stays exactly as
+     * before.
      */
     @GetMapping("/google/callback")
     public ResponseEntity<GoogleTokenResponse> callback(
@@ -105,7 +113,7 @@ public class GoogleAuthenticationResource {
     ) {
         String frontendBaseUrl = applicationProperties.getFrontend().getBaseUrl();
         boolean frontendConfigured = frontendBaseUrl != null && !frontendBaseUrl.isBlank();
-        response.addHeader(HttpHeaders.SET_COOKIE, stateCookie(null, Duration.ZERO, request.isSecure()).toString());
+        response.addHeader(HttpHeaders.SET_COOKIE, stateCookie(null, Duration.ZERO, secureStateCookie(request)).toString());
         try {
             if (error != null) {
                 throw new BadRequestAlertException("Google refused the sign-in request", ENTITY_NAME, "authorizationDenied");
@@ -135,6 +143,13 @@ public class GoogleAuthenticationResource {
             return ResponseEntity.status(HttpStatus.FOUND)
                 .location(URI.create(frontendBaseUrl + "/auth/callback?error=" + e.getErrorKey()))
                 .build();
+        } catch (GoogleAuthenticationException e) {
+            if (!frontendConfigured) {
+                throw e;
+            }
+            return ResponseEntity.status(HttpStatus.FOUND)
+                .location(URI.create(frontendBaseUrl + "/auth/callback?error=upstreamFailure"))
+                .build();
         }
     }
 
@@ -146,6 +161,22 @@ public class GoogleAuthenticationResource {
             .path(STATE_COOKIE_PATH)
             .maxAge(maxAge)
             .build();
+    }
+
+    /**
+     * {@code server.forward-headers-strategy} is only configured for the dev profile - JHipster
+     * ships no production default - so behind a TLS-terminating proxy in production {@code
+     * request.isSecure()} reports {@code false} and the state cookie would ship without {@code
+     * Secure}. Rather than depend on proxy headers being set correctly, this also treats the
+     * deployment as TLS when the configured frontend URL is itself {@code https://}: the cookie
+     * only ever exists on the SPA branch, and that branch only activates when {@code
+     * frontend.base-url} is set, so an {@code https://} frontend URL already implies a TLS
+     * deployment. Do not simplify this back to {@code request.isSecure()} alone - that is precisely
+     * the gap this closes.
+     */
+    private boolean secureStateCookie(HttpServletRequest request) {
+        String frontendBaseUrl = applicationProperties.getFrontend().getBaseUrl();
+        return request.isSecure() || (frontendBaseUrl != null && frontendBaseUrl.startsWith("https://"));
     }
 
     @PostMapping("/exchange")
