@@ -1,9 +1,13 @@
 package com.prayerroster.web.rest;
 
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.prayerroster.domain.User;
+import com.prayerroster.repository.UserRepository;
 import com.prayerroster.security.SecurityUtils;
 import java.security.Principal;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
@@ -23,6 +27,12 @@ public class AccountResource {
 
     private static final Logger LOG = LoggerFactory.getLogger(AccountResource.class);
 
+    private final UserRepository userRepository;
+
+    public AccountResource(UserRepository userRepository) {
+        this.userRepository = userRepository;
+    }
+
     private static class AccountResourceException extends RuntimeException {
 
         private static final long serialVersionUID = 1L;
@@ -41,6 +51,7 @@ public class AccountResource {
      */
     @GetMapping("/account")
     public UserVM getAccount(Principal principal) {
+        LOG.debug("REST request to get the current account");
         if (principal instanceof AbstractAuthenticationToken) {
             return getUserFromAuthentication((AbstractAuthenticationToken) principal);
         } else {
@@ -60,20 +71,49 @@ public class AccountResource {
         return ResponseEntity.status(principal == null ? HttpStatus.UNAUTHORIZED : HttpStatus.NO_CONTENT).build();
     }
 
+    /**
+     * The caller's own account. Identity comes from the ID token's claims, but the two service
+     * capabilities and the application role live in our own {@code User} row, not in anything
+     * Google issues - so they are read here rather than left to {@code GET /api/users/{id}},
+     * which is USER_VIEW-gated and therefore closed to a plain member asking about themselves.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
     private static class UserVM {
 
         private String login;
         private Set<String> authorities;
         private Map<String, Object> details;
+        private String roleName;
+        private boolean canModerate;
+        private boolean canPreach;
 
-        UserVM(String login, Set<String> authorities, Map<String, Object> details) {
+        UserVM(String login, Set<String> authorities, Map<String, Object> details, String roleName, boolean canModerate, boolean canPreach) {
             this.login = login;
             this.authorities = authorities;
             this.details = details;
+            this.roleName = roleName;
+            this.canModerate = canModerate;
+            this.canPreach = canPreach;
         }
 
         public boolean isActivated() {
             return true;
+        }
+
+        /**
+         * The application role - what the caller may do in the software. Deliberately distinct
+         * from the service capabilities below, which say what they may do during a prayer service.
+         */
+        public String getRoleName() {
+            return roleName;
+        }
+
+        public boolean isCanModerate() {
+            return canModerate;
+        }
+
+        public boolean isCanPreach() {
+            return canPreach;
         }
 
         public Set<String> getAuthorities() {
@@ -90,16 +130,23 @@ public class AccountResource {
         }
     }
 
-    private static UserVM getUserFromAuthentication(AbstractAuthenticationToken authToken) {
+    private UserVM getUserFromAuthentication(AbstractAuthenticationToken authToken) {
         if (!(authToken instanceof JwtAuthenticationToken jwtAuthToken)) {
             throw new IllegalArgumentException("AuthenticationToken is not a JWT - this backend is a stateless Resource Server only!");
         }
         Map<String, Object> attributes = jwtAuthToken.getTokenAttributes();
+        // Join-fetches the role in the same query: this endpoint is called on every page load of
+        // the SPA, so a lazy role would be one extra round trip each time (and, with
+        // open-in-view disabled, a LazyInitializationException rather than a second query).
+        Optional<User> user = userRepository.findByIdWithRole(authToken.getName());
 
         return new UserVM(
             authToken.getName(),
             authToken.getAuthorities().stream().map(GrantedAuthority::getAuthority).collect(Collectors.toSet()),
-            SecurityUtils.extractDetailsFromTokenAttributes(attributes)
+            SecurityUtils.extractDetailsFromTokenAttributes(attributes),
+            user.map(u -> u.getRole().getName()).orElse(null),
+            user.map(User::isCanModerate).orElse(false),
+            user.map(User::isCanPreach).orElse(false)
         );
     }
 }
