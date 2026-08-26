@@ -156,3 +156,4 @@ coverage/
 run-local.sh
 .env
 .env.local
+dev-oauth-shim.mjs
