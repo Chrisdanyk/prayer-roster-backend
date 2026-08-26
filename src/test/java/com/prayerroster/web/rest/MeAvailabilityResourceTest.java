@@ -9,9 +9,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.prayerroster.domain.PrayerAssignmentRole;
 import com.prayerroster.domain.UserAvailabilityStatus;
+import com.prayerroster.service.PrayerAssignmentService;
 import com.prayerroster.service.UserAvailabilityService;
 import com.prayerroster.service.dto.AvailabilityRequest;
+import com.prayerroster.service.dto.ConflictingAssignmentDTO;
 import com.prayerroster.service.dto.UserAvailabilityDTO;
 import com.prayerroster.web.rest.errors.BadRequestAlertException;
 import com.prayerroster.web.rest.errors.EntityNotFoundException;
@@ -41,13 +44,16 @@ class MeAvailabilityResourceTest {
     @Mock
     private UserAvailabilityService availabilityService;
 
+    @Mock
+    private PrayerAssignmentService prayerAssignmentService;
+
     private MockMvc mockMvc;
     private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
         objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
-        mockMvc = MockMvcBuilders.standaloneSetup(new MeAvailabilityResource(availabilityService))
+        mockMvc = MockMvcBuilders.standaloneSetup(new MeAvailabilityResource(availabilityService, prayerAssignmentService))
             .setControllerAdvice(new ExceptionTranslator(new MockEnvironment()))
             .setMessageConverters(new MappingJackson2HttpMessageConverter(objectMapper))
             .build();
@@ -124,6 +130,18 @@ class MeAvailabilityResourceTest {
         mockMvc.perform(delete("/api/me/availability/1")).andExpect(status().isNoContent());
 
         verify(availabilityService).cancel(USER_ID, 1L);
+    }
+
+    @Test
+    void getConflicts_returnsCollidingAssignments() throws Exception {
+        when(prayerAssignmentService.findOwnConflicts("sub-1", LocalDate.parse("2026-09-14"), LocalDate.parse("2026-09-18"))).thenReturn(
+            List.of(new ConflictingAssignmentDTO(LocalDate.parse("2026-09-16"), PrayerAssignmentRole.MODERATOR))
+        );
+
+        mockMvc
+            .perform(get("/api/me/availability/conflicts").param("from", "2026-09-14").param("to", "2026-09-18"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].role").value("MODERATOR"));
     }
 
     @Test

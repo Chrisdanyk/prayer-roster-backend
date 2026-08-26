@@ -11,9 +11,6 @@
   { "code": "ROLE_DELETE", "description": "Supprimer un rôle" },
 
   { "code": "PERMISSION_VIEW", "description": "Consulter les permissions" },
-  { "code": "PERMISSION_CREATE", "description": "Créer une permission" },
-  { "code": "PERMISSION_UPDATE", "description": "Modifier une permission" },
-  { "code": "PERMISSION_DELETE", "description": "Supprimer une permission" },
 
   { "code": "PRAYER_CONFIG_VIEW", "description": "Consulter la configuration hebdomadaire de la prière" },
   { "code": "PRAYER_CONFIG_UPDATE", "description": "Modifier la configuration hebdomadaire de la prière" },
@@ -21,13 +18,10 @@
   { "code": "ROSTER_VIEW", "description": "Consulter les plannings de prière" },
   { "code": "ROSTER_GENERATE", "description": "Générer un planning de prière" },
   { "code": "ROSTER_REGENERATE", "description": "Régénérer un planning de prière" },
-  { "code": "ROSTER_PUBLISH", "description": "Publier un planning de prière" },
   { "code": "ROSTER_RESCHEDULE", "description": "Redéclencher la replanification d'un planning" },
 
   { "code": "AVAILABILITY_VIEW", "description": "Consulter les indisponibilités" },
   { "code": "AVAILABILITY_MANAGE", "description": "Gérer les indisponibilités des utilisateurs" },
-
-  { "code": "NOTIFICATION_VIEW", "description": "Consulter les notifications" },
 
   { "code": "REMINDER_CONFIG_VIEW", "description": "Consulter la configuration des rappels" },
   { "code": "REMINDER_CONFIG_UPDATE", "description": "Modifier la configuration des rappels" }

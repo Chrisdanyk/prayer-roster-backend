@@ -48,17 +48,15 @@ class RbacSeedServiceTest {
         service.seedPermissionCatalog();
 
         ArgumentCaptor<Permission> captor = ArgumentCaptor.forClass(Permission.class);
-        verify(permissionRepository, times(25)).save(captor.capture());
+        verify(permissionRepository, times(20)).save(captor.capture());
         assertThat(captor.getAllValues()).extracting(Permission::getCode).contains(
             "USER_VIEW",
             "ROLE_DELETE",
-            "PERMISSION_CREATE",
+            "PERMISSION_VIEW",
             "PRAYER_CONFIG_UPDATE",
             "ROSTER_GENERATE",
-            "ROSTER_PUBLISH",
             "ROSTER_RESCHEDULE",
             "AVAILABILITY_MANAGE",
-            "NOTIFICATION_VIEW",
             "REMINDER_CONFIG_VIEW",
             "REMINDER_CONFIG_UPDATE"
         );
@@ -104,6 +102,21 @@ class RbacSeedServiceTest {
         Role saved = captor.getValue();
         assertThat(saved.getName()).isEqualTo(RoleNames.ADMIN);
         assertThat(saved.getPermissions()).containsExactly(viewPermission);
+    }
+
+    @Test
+    void run_seedsUserRoleWithTheWeeklyConfigurationReadPermissionOnly() {
+        Permission configView = new Permission();
+        configView.setId(1L);
+        configView.setCode("PRAYER_CONFIG_VIEW");
+        when(roleRepository.findByName(RoleNames.USER)).thenReturn(Optional.empty());
+        when(permissionRepository.findByCode("PRAYER_CONFIG_VIEW")).thenReturn(Optional.of(configView));
+
+        service.seedRole(RoleNames.USER, "Utilisateur standard", List.of("PRAYER_CONFIG_VIEW"));
+
+        ArgumentCaptor<Role> captor = ArgumentCaptor.forClass(Role.class);
+        verify(roleRepository).save(captor.capture());
+        assertThat(captor.getValue().getPermissions()).extracting(Permission::getCode).containsExactly("PRAYER_CONFIG_VIEW");
     }
 
     @Test

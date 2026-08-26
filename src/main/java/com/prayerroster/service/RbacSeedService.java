@@ -45,10 +45,9 @@ public class RbacSeedService implements ApplicationRunner {
         "ROSTER_VIEW",
         "ROSTER_GENERATE",
         "ROSTER_REGENERATE",
-        "ROSTER_PUBLISH",
         "ROSTER_RESCHEDULE",
         "AVAILABILITY_VIEW",
-        "NOTIFICATION_VIEW",
+        "AVAILABILITY_MANAGE",
         "REMINDER_CONFIG_VIEW",
         "REMINDER_CONFIG_UPDATE"
     );
@@ -72,7 +71,10 @@ public class RbacSeedService implements ApplicationRunner {
             permissionRepository.findAll().stream().map(Permission::getCode).toList()
         );
         seedRole(RoleNames.ADMIN, "Gestion opérationnelle des plannings de prière", ADMIN_DEFAULT_PERMISSIONS);
-        seedRole(RoleNames.USER, "Utilisateur standard - accès à ses propres données uniquement", List.of());
+        // PRAYER_CONFIG_VIEW only: a member sees which days have prayer and which need a preacher,
+        // never who is serving - /api/prayer-sessions stays behind ROSTER_VIEW. Without it a
+        // member's calendar is one highlighted day in an empty month. See section 10.
+        seedRole(RoleNames.USER, "Utilisateur standard - accès à ses propres données uniquement", List.of("PRAYER_CONFIG_VIEW"));
     }
 
     @Transactional

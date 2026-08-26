@@ -60,6 +60,7 @@ public class SecurityConfiguration {
                     .requestMatchers(mvc.pattern("/api/auth-info")).permitAll()
                     .requestMatchers(mvc.pattern("/api/auth/google/url")).permitAll()
                     .requestMatchers(mvc.pattern("/api/auth/google/callback")).permitAll()
+                    .requestMatchers(mvc.pattern("/api/auth/exchange")).permitAll()
                     .requestMatchers(mvc.pattern("/management/health")).permitAll()
                     .requestMatchers(mvc.pattern("/management/health/**")).permitAll()
                     .requestMatchers(mvc.pattern("/management/info")).permitAll()

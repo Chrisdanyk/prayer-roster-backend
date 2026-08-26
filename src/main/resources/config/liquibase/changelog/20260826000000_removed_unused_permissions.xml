@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<databaseChangeLog
+    xmlns="http://www.liquibase.org/xml/ns/dbchangelog"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xsi:schemaLocation="http://www.liquibase.org/xml/ns/dbchangelog http://www.liquibase.org/xml/ns/dbchangelog/dbchangelog-latest.xsd">
+
+    <changeSet id="20260826000000-1" author="prayer-roster">
+        <comment>Remove permissions abandoned in Sprint 11; role_permission rows go first (FK).</comment>
+        <sql>
+            delete from role_permission where permission_id in (
+                select id from permission where code in
+                ('ROSTER_PUBLISH','NOTIFICATION_VIEW','PERMISSION_CREATE','PERMISSION_UPDATE','PERMISSION_DELETE')
+            );
+        </sql>
+        <sql>
+            delete from permission where code in
+            ('ROSTER_PUBLISH','NOTIFICATION_VIEW','PERMISSION_CREATE','PERMISSION_UPDATE','PERMISSION_DELETE');
+        </sql>
+    </changeSet>
+</databaseChangeLog>

@@ -203,14 +203,18 @@ info:
 jhipster:
   clientApp:
     name: 'prayerRosterBackendApp'
-  # By default CORS is disabled. Uncomment to enable.
-  # cors:
-  #   allowed-origins: "http://localhost:8100,http://localhost:9000"
-  #   allowed-methods: "*"
-  #   allowed-headers: "*"
-  #   exposed-headers: "Authorization,Link,X-Total-Count,X-${jhipster.clientApp.name}-alert,X-${jhipster.clientApp.name}-error,X-${jhipster.clientApp.name}-params"
-  #   allow-credentials: true
-  #   max-age: 1800
+  # Empty allowed-origins leaves CORS disabled exactly as the commented-out block below used to
+  # (WebConfigurer skips filter registration when the origin list is empty). Once FRONTEND_BASE_URL
+  # is set for a SPA-backed deployment, the callback's 302 to the frontend is followed by a
+  # browser-originated POST /api/auth/exchange, which needs a CORS preflight to succeed - without
+  # this, sign-in would be impossible in any environment that configures a frontend.
+  cors:
+    allowed-origins: '${FRONTEND_BASE_URL:}'
+    allowed-methods: '*'
+    allowed-headers: '*'
+    exposed-headers: 'Authorization,Link,X-Total-Count,X-${jhipster.clientApp.name}-alert,X-${jhipster.clientApp.name}-error,X-${jhipster.clientApp.name}-params'
+    allow-credentials: true
+    max-age: 1800
   mail:
     from: prayerRosterBackend@localhost
   api-docs:
@@ -251,3 +255,5 @@ application:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}
     redirect-uri: ${GOOGLE_REDIRECT_URI:}
+  frontend:
+    base-url: ${FRONTEND_BASE_URL:}

@@ -10,6 +10,7 @@ import com.prayerroster.domain.PrayerAssignment;
 import com.prayerroster.domain.PrayerAssignmentRole;
 import com.prayerroster.domain.PrayerSession;
 import com.prayerroster.repository.PrayerAssignmentRepository;
+import com.prayerroster.service.dto.ConflictingAssignmentDTO;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -39,6 +40,10 @@ class PrayerAssignmentServiceTest {
         session.setDate(date);
         assignment.setSession(session);
         return assignment;
+    }
+
+    private static PrayerAssignment assignmentOn(LocalDate date, PrayerAssignmentRole role) {
+        return assignment(null, date, role);
     }
 
     @Test
@@ -73,5 +78,41 @@ class PrayerAssignmentServiceTest {
         when(prayerAssignmentRepository.findPublishedAssignmentsForUserInRange(eq("u1"), any(), any())).thenReturn(List.of());
 
         assertThat(service.findOwnUpcoming("u1")).isEmpty();
+    }
+
+    @Test
+    void findOwnConflicts_returnsPublishedAssignmentsInsideTheProposedRange() {
+        PrayerAssignment assignment = assignmentOn(LocalDate.parse("2026-09-16"), PrayerAssignmentRole.MODERATOR);
+        when(
+            prayerAssignmentRepository.findPublishedAssignmentsForUserInRange(
+                "sub-1",
+                LocalDate.parse("2026-09-14"),
+                LocalDate.parse("2026-09-18")
+            )
+        ).thenReturn(List.of(assignment));
+
+        List<ConflictingAssignmentDTO> conflicts = service.findOwnConflicts(
+            "sub-1",
+            LocalDate.parse("2026-09-14"),
+            LocalDate.parse("2026-09-18")
+        );
+
+        assertThat(conflicts).singleElement().satisfies(c -> {
+            assertThat(c.date()).isEqualTo(LocalDate.parse("2026-09-16"));
+            assertThat(c.role()).isEqualTo(PrayerAssignmentRole.MODERATOR);
+        });
+    }
+
+    @Test
+    void findOwnConflicts_returnsEmptyWhenNothingCollides() {
+        when(
+            prayerAssignmentRepository.findPublishedAssignmentsForUserInRange(
+                "sub-1",
+                LocalDate.parse("2026-10-01"),
+                LocalDate.parse("2026-10-02")
+            )
+        ).thenReturn(List.of());
+
+        assertThat(service.findOwnConflicts("sub-1", LocalDate.parse("2026-10-01"), LocalDate.parse("2026-10-02"))).isEmpty();
     }
 }

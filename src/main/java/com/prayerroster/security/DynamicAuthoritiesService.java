@@ -43,6 +43,14 @@ public class DynamicAuthoritiesService {
         authoritiesCache.invalidate(userId);
     }
 
+    /**
+     * Editing a role changes the authorities of every user holding it, and {@link #evict(String)} is
+     * per-user - without this a permission change appears to do nothing for up to the cache TTL.
+     */
+    public void evictAll() {
+        authoritiesCache.invalidateAll();
+    }
+
     private Set<GrantedAuthority> computeAuthorities(User user) {
         Set<GrantedAuthority> authorities = user
             .getRole()

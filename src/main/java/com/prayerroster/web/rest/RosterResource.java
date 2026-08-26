@@ -9,6 +9,7 @@ import com.prayerroster.service.RosterService;
 import com.prayerroster.service.dto.GenerateRosterRequest;
 import com.prayerroster.service.dto.RescheduleRequest;
 import com.prayerroster.service.dto.RosterDTO;
+import com.prayerroster.service.dto.RosterGenerationDTO;
 import jakarta.validation.Valid;
 import java.util.List;
 import java.util.Locale;
@@ -74,6 +75,12 @@ public class RosterResource {
     @PreAuthorize("hasAuthority('PERM_ROSTER_VIEW')")
     public RosterDTO getRoster(@PathVariable Long id) {
         return rosterService.findOne(id);
+    }
+
+    @GetMapping("/{id}/generations")
+    @PreAuthorize("hasAuthority('PERM_ROSTER_VIEW')")
+    public List<RosterGenerationDTO> getGenerations(@PathVariable Long id) {
+        return rosterService.findGenerations(id);
     }
 
     @GetMapping("/{id}/pdf")

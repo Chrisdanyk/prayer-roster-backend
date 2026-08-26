@@ -10,6 +10,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
+import com.prayerroster.domain.RosterGenerationStatus;
+import com.prayerroster.domain.RosterGenerationTrigger;
 import com.prayerroster.domain.RosterStatus;
 import com.prayerroster.domain.User;
 import com.prayerroster.repository.UserRepository;
@@ -20,6 +22,7 @@ import com.prayerroster.service.RosterService;
 import com.prayerroster.service.dto.GenerateRosterRequest;
 import com.prayerroster.service.dto.RescheduleRequest;
 import com.prayerroster.service.dto.RosterDTO;
+import com.prayerroster.service.dto.RosterGenerationDTO;
 import com.prayerroster.web.rest.errors.BadRequestAlertException;
 import com.prayerroster.web.rest.errors.EntityNotFoundException;
 import com.prayerroster.web.rest.errors.ExceptionTranslator;
@@ -159,6 +162,35 @@ class RosterResourceTest {
         );
 
         mockMvc.perform(post("/api/rosters/1/reschedule")).andExpect(status().isBadRequest());
+    }
+
+    @Test
+    void getGenerations_returnsTheAuditTrail() throws Exception {
+        when(rosterService.findGenerations(1L)).thenReturn(
+            java.util.List.of(
+                new RosterGenerationDTO(
+                    7L,
+                    RosterGenerationTrigger.MANUAL,
+                    RosterGenerationStatus.COMPLETED,
+                    LocalDate.parse("2026-09-01"),
+                    LocalDate.parse("2026-09-30"),
+                    0,
+                    -12,
+                    true,
+                    1800L,
+                    null,
+                    null,
+                    null,
+                    "admin"
+                )
+            )
+        );
+
+        mockMvc
+            .perform(get("/api/rosters/{id}/generations", 1L))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$[0].hardScore").value(0))
+            .andExpect(jsonPath("$[0].solverDurationMs").value(1800));
     }
 
     @Test

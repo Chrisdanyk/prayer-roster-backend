@@ -67,11 +67,22 @@ resource-server-only, stateless, CSRF disabled. `AudienceValidator` checks `aud 
 
 The backend **obtains tokens itself** as a confidential OAuth client: `GET /api/auth/google/url`
 builds Google's authorization URL (PKCE S256, single-use five-minute `state`), and
-`GET /api/auth/google/callback` exchanges the code server-side and returns the ID token in the
-response body. Both are `permitAll`. Endpoint URLs come from the issuer's OIDC metadata via
-`GoogleDiscoveryService`, never hardcoded. There are no refresh tokens — renewal is a fresh
-authorization redirect. Clients still send `Authorization: Bearer <id_token>`, so validation is
-identical whether the token came from this flow or a frontend.
+`GET /api/auth/google/callback` exchanges the code server-side. Both are `permitAll`. Endpoint URLs
+come from the issuer's OIDC metadata via `GoogleDiscoveryService`, never hardcoded. There are no
+refresh tokens — renewal is a fresh authorization redirect. Clients still send
+`Authorization: Bearer <id_token>`, so validation is identical whether the token came from this flow
+or a frontend.
+
+**The callback has two branches**, keyed on `application.frontend.base-url` (`FRONTEND_BASE_URL`,
+bound in `ApplicationProperties`; blank/unset by default). A browser *navigates* to the callback, so
+a JSON body is useless to a SPA — the token never re-enters JavaScript. With the frontend base URL
+set, the callback issues a **302** to `${baseUrl}/auth/callback?handoff=<opaque>` instead of a body;
+with it unset, the JSON branch stays exactly as before (this is the only manual live-verification path
+this project has). The SPA redeems the handoff via `POST /api/auth/exchange {handoff}` (also
+`permitAll`) → `{idToken, expiresIn}`. The handoff is minted by `HandoffStore`, a second Caffeine cache
+modeled on `AuthorizationRequestStore`: opaque, single-use (removed atomically on redemption; a replay
+returns 400), and 60s-TTL. **No token ever appears in a URL**, so none reaches browser history,
+`Referer` headers, or access logs.
 
 `User.id` **is** the Google `sub` claim — there is no separate subject column, and Google issues no
 `preferred_username`, so never assume that claim.
@@ -97,8 +108,17 @@ Two deliberately separate meanings of "admin":
   `jhi_user_authority` tables are gone.
 
 New permissions are added to `src/main/resources/config/permissions.json` (idempotently upserted by
-`RbacSeedService` at startup). Mutating a user's role or active status must `evict(...)` the
+`RbacSeedService` at startup). Mutating a user's role or active status must `evict(userId)` the
 authorities cache so the change is immediate rather than TTL-delayed.
+
+The `Role`/`Permission` graph is itself admin-editable: `/api/roles` (CRUD) and read-only
+`/api/permissions`. **Every role write calls `DynamicAuthoritiesService.evictAll()`**, not
+`evict(userId)` — editing a role changes the authorities of every user who holds it, and per-user
+eviction only ever targets one of them, so without the cache-wide call a permission change would
+silently do nothing until the TTL expired. `SUPER_ADMIN` cannot have permissions removed (it is the
+recovery path); its guard compares permission **codes**, not `Permission` entity identity, since
+`Permission#equals` is JPA-id-based and two independently-hydrated `Permission` instances for the same
+code are never `equal()` to each other.
 
 `/api/me/**` resources are authenticated-only with **no** permission gate, and ownership is enforced
 by the repository query itself. Each such resource's Javadoc states this explicitly — keep that.
@@ -184,6 +204,9 @@ for the code exchange; the redirect URI must exactly match one registered in the
 console), `GOOGLE_ISSUER` (defaults to `https://accounts.google.com`), `INITIAL_SUPER_ADMIN_EMAIL` —
 applied only on **first creation** of a user row, so a later manual demotion is never silently undone,
 and treated as an implicit allowlist entry so the first sign-in works against an empty database.
+`FRONTEND_BASE_URL` — blank/unset by default (JSON callback branch); set it to switch the Google
+callback to the 302-plus-handoff branch for a browser SPA (dev profile defaults it to
+`http://localhost:3000`).
 
 ## Definition of done
 

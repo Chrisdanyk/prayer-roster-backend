@@ -87,6 +87,17 @@ class DynamicAuthoritiesServiceTest {
         verify(provisioningService, times(2)).provisionOrRefresh(IDENTITY);
     }
 
+    @Test
+    void evictAll_forcesProvisioningToBeCalledAgainForEveryUser() {
+        when(provisioningService.provisionOrRefresh(IDENTITY)).thenReturn(userWith(RoleNames.USER));
+
+        service.resolveAuthorities(IDENTITY);
+        service.evictAll();
+        service.resolveAuthorities(IDENTITY);
+
+        verify(provisioningService, times(2)).provisionOrRefresh(IDENTITY);
+    }
+
     private User userWith(String roleName, String... permissionCodes) {
         Role role = new Role();
         role.setId(1L);
