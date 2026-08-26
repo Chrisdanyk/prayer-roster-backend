@@ -271,6 +271,41 @@ domain `Role` row named `ADMIN` (fully dynamic, editable, permission-driven), an
 We drop JHipster's default `Authority`/`jhi_user_authority` persistence entirely rather than trying to
 reuse it for both purposes.
 
+### Roles and permissions administration (Sprint 11)
+
+The `Role` → `Permission` graph described above is now itself editable through an admin surface:
+`GET/POST /api/roles`, `PUT/DELETE /api/roles/{id}` (`ROLE_VIEW`/`ROLE_CREATE`/`ROLE_UPDATE`/
+`ROLE_DELETE`) and a read-only `GET /api/permissions` (`PERMISSION_VIEW` — the catalogue is
+code-defined in `permissions.json` and re-seeded at every boot, so write endpoints would fight the
+seeder). `RoleDTO` carries a `userCount` so the UI can warn before a destructive edit.
+
+Three guards, each closing a way this surface could lock everyone out:
+
+- The three baseline roles (`SUPER_ADMIN`, `ADMIN`, `USER`) cannot be renamed or deleted — their
+  permission sets remain editable.
+- A role held by at least one user cannot be deleted.
+- `SUPER_ADMIN` cannot have permissions removed, since it is the recovery path and the sole grantor
+  of the static `ROLE_ADMIN` authority above. The check compares permission **codes**, not `Permission`
+  entity identity — an entity-identity `containsAll` looked equivalent but silently always failed,
+  since `Permission#equals` is JPA-id-based and two independently-hydrated `Permission` instances for
+  the same code (one on the attached role, one from a fresh repository lookup) are never `equal()`
+  to one another. Caught by the coverage gate forcing every branch of the guard to actually run, not
+  by inspection.
+
+**Every role write calls `DynamicAuthoritiesService.evictAll()`**, a cache-wide eviction added
+alongside the per-user `evict(userId)` that already existed. Editing a role changes the authorities
+of every user who holds it, and `evict(userId)` only ever targets one user — without `evictAll()` a
+permission change would silently do nothing for up to the 60s cache TTL, the same class of bug
+Sprint 2 fixed for role/status assignment on a single user.
+
+USER now also holds `PRAYER_CONFIG_VIEW` (see section 10), and five permissions that anticipated an
+admin surface which was deliberately never built (`ROSTER_PUBLISH` — publishing is automatic on a
+feasible solve, so an explicit action could only ever publish a roster that *failed* to solve;
+`NOTIFICATION_VIEW` — no product need beyond the self-service `/api/me/notifications`;
+`PERMISSION_CREATE`/`UPDATE`/`DELETE` — the catalogue is code-defined and re-seeded at boot) were
+retired from `permissions.json`, with a changelog deleting the orphaned `permission` and
+`role_permission` rows an existing database would otherwise keep.
+
 ---
 
 ## 10. Google Authentication Architecture
@@ -315,6 +350,35 @@ reuse it for both purposes.
 this matters: if SUPER_ADMIN is later reassigned away from this account, subsequent logins must not
 silently re-grant it), if `email` case-insensitively matches the configured value, assign
 `Role=SUPER_ADMIN`; otherwise `Role=USER`. No public self-promotion endpoint exists anywhere.
+
+### SPA auth landing: the callback's two branches (Sprint 11)
+
+`GET /api/auth/google/callback` gained a second branch, because a *browser* navigates to that URL
+rather than issuing an XHR: the SPA is gone by the time the response arrives, so a JSON body is
+useless to it. Which branch runs is decided by `application.frontend.base-url`
+(`FRONTEND_BASE_URL` env var, bound in `ApplicationProperties`, `ignoreUnknownFields = false` so the
+field must exist even when the value is blank):
+
+- **Unset/blank** — the callback returns the ID token as a JSON body, exactly as before. This branch
+  is deliberately kept: it is the only manual verification path this project has, since a full
+  `@SpringBootTest` cannot boot here (see `docs/sprint-roadmap.md`'s environment notes).
+- **Set** — the callback issues a **302** to `${FRONTEND_BASE_URL}/auth/callback?handoff=<opaque>`.
+  The SPA then redeems the handoff: `POST /api/auth/exchange {handoff}` → `{idToken, expiresIn}`.
+
+The handoff is minted by `HandoffStore`, a second Caffeine cache modeled on
+`AuthorizationRequestStore`: **opaque** (a 32-byte `SecureRandom` value, base64url-encoded — it carries
+no information about the token it stands for), **single-use** (removed atomically on redemption, so a
+replayed handoff is rejected with 400), and **short-lived** (60 seconds — it is redeemed within
+milliseconds of the redirect landing in the browser). **No token ever appears in a URL** at any point
+in this flow, which is the entire reason for the indirection: a token in a query string reaches
+browser history, `Referer` headers, and access logs, none of which are acceptable places for it to
+persist. `/api/auth/exchange` is `permitAll`, alongside the two existing Google endpoints.
+
+USER now also holds `PRAYER_CONFIG_VIEW` in the seeded catalogue (RbacSeedService), so a member's
+calendar can show which days have prayer and which need a preacher — the *recurring pattern*, not who
+is serving. Assignments stay private: `/api/prayer-sessions` remains behind `ROSTER_VIEW`. This only
+affects fresh databases; an existing one needs the permission granted to `USER` through the roles API
+by a `SUPER_ADMIN` (same caveat as `ADMIN` gaining `USER_CREATE` in Sprint 10).
 
 ---
 

@@ -358,6 +358,90 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       `GET /api/me/availability` and `POST /api/me/availability` all returned **401**. That last one is
       the fix: on `develop` today a deactivated user still gets 200 on those routes and can write.
 
+- [x] **Sprint 11 — Admin API Surface & SPA Auth Landing**: unblocks a browser frontend that cannot
+      exist yet on two fronts — it cannot log in, and half the seeded permission catalogue had no
+      endpoint behind it.
+      **SPA auth landing**: `GET /api/auth/google/callback` gains a second branch. A browser
+      *navigates* to that URL, so the existing JSON-body response is useless to a SPA — the token
+      never re-enters JavaScript. With `application.frontend.base-url` (`FRONTEND_BASE_URL`) set, the
+      callback now issues a **302** to `${baseUrl}/auth/callback?handoff=<opaque>` instead; with none
+      set, the JSON branch stays exactly as before, since it is the only manual verification path this
+      project has (a full `@SpringBootTest` still cannot boot here). The SPA redeems the handoff via
+      the new `POST /api/auth/exchange {handoff}` → `{idToken, expiresIn}`, both `permitAll`. The
+      handoff is minted by a new `HandoffStore` (a second Caffeine cache, modeled on
+      `AuthorizationRequestStore`): opaque (32 random bytes, base64url), single-use (removed atomically
+      on redemption, so a replay returns 400), and short-lived (60s — redeemed within milliseconds of
+      the redirect). **No token ever appears in a URL** at any point, so none reaches browser history,
+      `Referer` headers, or access logs.
+      **Roles and permissions API**: `GET/POST /api/roles`, `PUT/DELETE /api/roles/{id}`
+      (`ROLE_VIEW`/`CREATE`/`UPDATE`/`DELETE`) and read-only `GET /api/permissions`
+      (`PERMISSION_VIEW` — the catalogue is code-defined in `permissions.json` and re-seeded at every
+      boot, so a write endpoint would just fight the seeder). Guards: the three baseline roles
+      (`SUPER_ADMIN`/`ADMIN`/`USER`) cannot be renamed or deleted; a role still held by a user cannot
+      be deleted; `SUPER_ADMIN` cannot have permissions removed, since it is the recovery path and the
+      sole grantor of the static `ROLE_ADMIN` actuator authority. Every role write now calls the new
+      `DynamicAuthoritiesService.evictAll()` — editing a role changes every holder's authorities at
+      once, and the existing `evict(userId)` is per-user, so without a cache-wide eviction the change
+      would silently wait out the 60s TTL, the exact class of bug Sprint 2 fixed for single-user role
+      assignment.
+      **Roster generation history**: `GET /api/rosters/{id}/generations` (`ROSTER_VIEW`) finally
+      exposes `RosterGeneration`, which has stored every solver metric since Sprint 5 and was promised
+      in architecture §14 but never made readable; `RosterGenerationRepository` went from an empty
+      interface to one explicit, `createdDate`-descending `@Query`.
+      **Admin availability**: `/api/users/{userId}/availability` (`GET`/`POST`/`DELETE`,
+      `AVAILABILITY_VIEW`/`AVAILABILITY_MANAGE`) delegates straight through to the same
+      `UserAvailabilityService` methods the self-service path uses, with the **path** user id rather
+      than the caller's — so the same `UserAvailabilityChangedEvent` still fires and rescheduling still
+      triggers. Recording an absence on someone's behalf without that event would leave the roster
+      quietly holding an assignment nobody can serve.
+      **Availability conflict preview**: `GET /api/me/availability/conflicts?from=&to=`
+      (authenticated, no permission gate — same reasoning as every other `/api/me/**` resource) reuses
+      the existing `findPublishedAssignmentsForUserInRange` query so the UI can warn *before*
+      submission instead of only reacting after rescheduling has already run.
+      **Permission catalogue cleanup**: five permissions that anticipated an admin surface never built
+      are retired from `permissions.json` (25 → 20 seeded codes), each for a stated reason rather than
+      neglect — `ROSTER_PUBLISH` (publishing is automatic on a feasible solve per architecture §11; an
+      explicit publish action could only ever publish a roster that *failed* to solve, which is a
+      footgun, not a feature), `NOTIFICATION_VIEW` (no product need beyond the already-ungated
+      self-service `/api/me/notifications`), and `PERMISSION_CREATE`/`UPDATE`/`DELETE` (the catalogue
+      is code-defined and re-seeded at boot; write endpoints would fight the seeder). A Liquibase
+      changelog deletes the now-orphaned `role_permission` and `permission` rows an existing database
+      would otherwise keep, since `RbacSeedService` upserts by code and never deletes. In the same
+      change, `USER` gains `PRAYER_CONFIG_VIEW` so a member's calendar can show the recurring pattern of
+      church life (which days have prayer, which need a preacher) without exposing who is assigned —
+      `/api/prayer-sessions` stays behind `ROSTER_VIEW`. Both catalogue changes affect fresh databases
+      only; an existing one needs the equivalent role edit performed through the new roles API by a
+      `SUPER_ADMIN`, the same caveat as `ADMIN` gaining `USER_CREATE` in Sprint 10.
+      **The plan's own code shipped two defects, both caught before merge rather than in production —
+      worth recording as the process working as intended.** (1) The `SUPER_ADMIN`-immutability guard in
+      `RoleService.update` was specified as `!permissions.containsAll(role.getPermissions())` over
+      `Set<Permission>`, which relies on `Permission#equals`. `Permission.equals` is JPA-identity-based
+      (`id != null && id.equals(other.id)`), and the two `Permission` collections being compared are
+      independently hydrated — one already attached to the role, one freshly returned by
+      `permissionRepository.findByCode(...)` — so they are never `equal()` to each other regardless of
+      code, and the guard always threw. Running the plan's own verbatim test against its own verbatim
+      implementation failed immediately. Fixed by comparing permission **codes** (`Set<String>`)
+      instead of entity identity, which is also the more correct comparison in production: the
+      permission code is the actual business key at this decision point, not two independently-hydrated
+      JPA collections that happen to resolve to the same rows. (2) `ROSTER_PUBLISH` was present in
+      `RbacSeedService.ADMIN_DEFAULT_PERMISSIONS` alongside `NOTIFICATION_VIEW`, but the plan's cleanup
+      step named only `NOTIFICATION_VIEW` for removal from that list. Left in place, it would have been
+      exactly the "misleading dangling reference to a deleted code" the plan itself warned against —
+      caught by the same grep sanity check the plan's own step prescribed, and removed alongside it.
+      46 new tests across the six tasks (312 → 358), JaCoCo gate green throughout (each task's
+      `./mvnw -o verify -DskipITs` run reached "All coverage checks have been met." before its commit).
+      **Live verification is pending** — not yet run against a real Postgres and a real Google account.
+      Outstanding, and all but one require a real signed ID token or a completed browser sign-in to
+      exercise (the exception is noted): the callback returns **302** to `/auth/callback?handoff=…`
+      with `FRONTEND_BASE_URL` set and the `Location` header carries no token; `POST /api/auth/exchange`
+      returns the token for that handoff and a replay of the same handoff returns 400; unsetting
+      `FRONTEND_BASE_URL` restores the JSON branch; editing a role's permissions changes an affected
+      user's access on the *next request* rather than 60 seconds later; and `GET
+      /api/rosters/{id}/generations` returns real solver scores for an authenticated `ROSTER_VIEW`
+      holder. (The one item that does not strictly need a token — confirming the Liquibase changelog
+      applies and the five retired permission rows are actually gone — only needs raw SQL against the
+      database, but was left for the same live-verification pass rather than checked separately here.)
+
 ## Local environment notes
 
 - **Docker runtime is Colima**, not Docker Desktop (`docker context use colima`, or just leave it -

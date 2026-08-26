@@ -12,7 +12,7 @@ That works for curl, but a browser *navigates* to that URL: the SPA is gone, the
 and the token never re-enters JavaScript. The previous spec deferred "a browser-app landing or
 handoff code" explicitly, on the grounds that no frontend existed. One now does.
 
-**Half the permission catalogue has no endpoint behind it.** Thirteen of the twenty-six seeded
+**Half the permission catalogue has no endpoint behind it.** Thirteen of the twenty-five seeded
 permissions are referenced nowhere in `web/rest`:
 
 ```
