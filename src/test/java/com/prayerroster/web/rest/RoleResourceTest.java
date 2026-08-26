@@ -135,6 +135,50 @@ class RoleResourceTest {
     }
 
     @Test
+    void updateRole_returns400OnEmptyName() throws Exception {
+        mockMvc
+            .perform(
+                put("/api/roles/{id}", 2L)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new UpdateRoleRequest("", null, List.of())))
+            )
+            .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(roleService);
+    }
+
+    @Test
+    void updateRole_returns400OnBlankName() throws Exception {
+        mockMvc
+            .perform(
+                put("/api/roles/{id}", 2L)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new UpdateRoleRequest("   ", null, List.of())))
+            )
+            .andExpect(status().isBadRequest());
+
+        verifyNoInteractions(roleService);
+    }
+
+    @Test
+    void updateRole_succeedsWithNullNamePreservingOptionality() throws Exception {
+        when(roleService.update(2L, new UpdateRoleRequest(null, "Updated Description", List.of("USER_VIEW")))).thenReturn(
+            new RoleDTO(2L, "COORDINATOR", "Updated Description", List.of("USER_VIEW"), 1L)
+        );
+
+        mockMvc
+            .perform(
+                put("/api/roles/{id}", 2L)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new UpdateRoleRequest(null, "Updated Description", List.of("USER_VIEW"))))
+            )
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.description").value("Updated Description"));
+
+        verify(roleService).update(2L, new UpdateRoleRequest(null, "Updated Description", List.of("USER_VIEW")));
+    }
+
+    @Test
     void deleteRole_returns204() throws Exception {
         mockMvc.perform(delete("/api/roles/{id}", 5L)).andExpect(status().isNoContent());
 
