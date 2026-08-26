@@ -11,9 +11,12 @@ import org.springframework.web.bind.annotation.*;
 
 /**
  * Lets an administrator record an absence on a member's behalf - somebody phones in rather than
- * using the app. Delegates to the same service the self-service path uses, so the
- * {@code UserAvailabilityChangedEvent} still fires and rescheduling still triggers; recording an
- * absence without that event would leave the roster holding an assignment that cannot be served.
+ * using the app. Delegates to the same service the self-service path uses: recording an absence
+ * ({@code POST}) publishes the same {@code UserAvailabilityChangedEvent} the self-service path
+ * publishes, so rescheduling still triggers - recording one without that event would leave the
+ * roster holding an assignment that cannot be served. Cancelling ({@code DELETE}) publishes no
+ * event, on this path or the self-service one, since {@link UserAvailabilityService#cancel} does
+ * not publish one.
  */
 @RestController
 @RequestMapping("/api/users/{userId}/availability")

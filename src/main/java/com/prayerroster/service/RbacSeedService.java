@@ -47,6 +47,7 @@ public class RbacSeedService implements ApplicationRunner {
         "ROSTER_REGENERATE",
         "ROSTER_RESCHEDULE",
         "AVAILABILITY_VIEW",
+        "AVAILABILITY_MANAGE",
         "REMINDER_CONFIG_VIEW",
         "REMINDER_CONFIG_UPDATE"
     );

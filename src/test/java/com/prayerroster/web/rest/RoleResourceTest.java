@@ -89,7 +89,7 @@ class RoleResourceTest {
 
     @Test
     void updateRole_returns200() throws Exception {
-        when(roleService.update(2L, new UpdateRoleRequest("Coordination", List.of("USER_VIEW")))).thenReturn(
+        when(roleService.update(2L, new UpdateRoleRequest(null, "Coordination", List.of("USER_VIEW")))).thenReturn(
             new RoleDTO(2L, "COORDINATOR", "Coordination", List.of("USER_VIEW"), 1L)
         );
 
@@ -97,10 +97,41 @@ class RoleResourceTest {
             .perform(
                 put("/api/roles/{id}", 2L)
                     .contentType(MediaType.APPLICATION_JSON)
-                    .content(objectMapper.writeValueAsString(new UpdateRoleRequest("Coordination", List.of("USER_VIEW"))))
+                    .content(objectMapper.writeValueAsString(new UpdateRoleRequest(null, "Coordination", List.of("USER_VIEW"))))
             )
             .andExpect(status().isOk())
             .andExpect(jsonPath("$.description").value("Coordination"));
+    }
+
+    @Test
+    void updateRole_returns200WhenRenamingACustomRole() throws Exception {
+        when(roleService.update(2L, new UpdateRoleRequest("SUPERVISOR", "Coordination", List.of("USER_VIEW")))).thenReturn(
+            new RoleDTO(2L, "SUPERVISOR", "Coordination", List.of("USER_VIEW"), 1L)
+        );
+
+        mockMvc
+            .perform(
+                put("/api/roles/{id}", 2L)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new UpdateRoleRequest("SUPERVISOR", "Coordination", List.of("USER_VIEW"))))
+            )
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.name").value("SUPERVISOR"));
+    }
+
+    @Test
+    void updateRole_returns400WhenRenamingABaselineRole() throws Exception {
+        when(roleService.update(1L, new UpdateRoleRequest("SUPERVISOR", null, List.of()))).thenThrow(
+            new BadRequestAlertException("Baseline roles cannot be renamed", "role", "baselineRole")
+        );
+
+        mockMvc
+            .perform(
+                put("/api/roles/{id}", 1L)
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .content(objectMapper.writeValueAsString(new UpdateRoleRequest("SUPERVISOR", null, List.of())))
+            )
+            .andExpect(status().isBadRequest());
     }
 
     @Test
