@@ -454,10 +454,13 @@ checks), and a query-performance pass (no N+1 — verified via Hibernate statist
       but a reminder that the two failure modes report identically. And a transient
       `Connection reset` to Google's token endpoint produced a generic 502 with the detail confined to
       the server log, which is the earlier leak fix holding up under an unplanned fault. That same
-      fault made a known gap concrete: `GoogleAuthenticationException` is not caught by the SPA
+      fault made a known gap concrete: `GoogleAuthenticationException` was not caught by the SPA
       redirect handler, so an upstream failure - or simply refreshing the callback page, which
-      re-sends a spent code - still dead-ends the user on raw JSON at the backend origin. Left open
-      deliberately, recorded here rather than fixed in the same pass.
+      re-sends a spent code - dead-ended the user on raw JSON at the backend origin.
+      **Closed since, in `4791992`**: the exception is caught alongside `BadRequestAlertException`
+      and redirects to `/auth/callback?error=upstreamFailure`, so every failure of this flow now
+      lands the browser back in the SPA. With no frontend configured the 502 still surfaces
+      unchanged, which keeps the manual verification path intact.
 
 ## Local environment notes
 
