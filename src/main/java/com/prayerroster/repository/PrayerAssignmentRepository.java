@@ -37,4 +37,12 @@ public interface PrayerAssignmentRepository extends JpaRepository<PrayerAssignme
         "where s.date = :date and s.roster.status = com.prayerroster.domain.RosterStatus.PUBLISHED"
     )
     List<PrayerAssignment> findPublishedAssignmentsForDate(@Param("date") LocalDate date);
+
+    /**
+     * Every assignment tagged with one generation run - the working set {@link
+     * com.prayerroster.service.RosterSolvingService} solves and applies. {@code user} is left-joined,
+     * not inner-joined: a brand-new generation's assignments are all still unfilled at this point.
+     */
+    @Query("select distinct a from PrayerAssignment a join fetch a.session s left join fetch a.user where a.generation.id = :generationId")
+    List<PrayerAssignment> findByGenerationIdWithSessionAndUser(@Param("generationId") Long generationId);
 }
