@@ -60,7 +60,14 @@ public class WeeklyPrayerConfigurationService {
             target = current.orElseThrow();
             target.getDays().clear();
         } else {
-            current.ifPresent(previous -> previous.setEffectiveTo(today.minusDays(1)));
+            // Flushed immediately: Hibernate orders a flush's inserts before its updates, so without
+            // this the new row's INSERT (effective_to still null) would hit the database before this
+            // UPDATE closes the previous row, tripping ux_weekly_prayer_configuration_current even
+            // though only one row is meant to be current at any moment.
+            current.ifPresent(previous -> {
+                previous.setEffectiveTo(today.minusDays(1));
+                repository.saveAndFlush(previous);
+            });
             target = new WeeklyPrayerConfiguration();
             target.setEffectiveFrom(today);
         }
