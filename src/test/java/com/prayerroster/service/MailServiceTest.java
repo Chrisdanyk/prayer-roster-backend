@@ -95,4 +95,25 @@ class MailServiceTest {
         assertThat(context.getVariable("actionUrl")).isEqualTo("https://app.example.com");
         assertThat(context.getVariable("actionLabel")).isEqualTo("Se connecter");
     }
+
+    @Test
+    void sendEmailAsync_sendsSuccessfully() throws Exception {
+        when(javaMailSender.createMimeMessage()).thenReturn(realMimeMessage());
+        when(templateEngine.process(eq("mail/notification"), any())).thenReturn("<p>Corps</p>");
+
+        service.sendEmailAsync("jean@example.com", "Sujet", "Corps", "https://app.example.com", "Se connecter");
+
+        verify(javaMailSender).send(any(jakarta.mail.internet.MimeMessage.class));
+    }
+
+    @Test
+    void sendEmailAsync_swallowsAndLogsAFailureRatherThanPropagating() {
+        when(javaMailSender.createMimeMessage()).thenReturn(realMimeMessage());
+        when(templateEngine.process(eq("mail/notification"), any())).thenReturn("<p>Corps</p>");
+        doThrow(new MailSendException("boom")).when(javaMailSender).send(any(MimeMessage.class));
+
+        // Must not throw - an @Async void method's exception would otherwise be lost to the
+        // uncaught-exception handler instead of being logged predictably.
+        service.sendEmailAsync("jean@example.com", "Sujet", "Corps", null, null);
+    }
 }

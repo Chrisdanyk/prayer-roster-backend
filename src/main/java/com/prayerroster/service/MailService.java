@@ -62,4 +62,20 @@ public class MailService {
             throw new MailSendException("Failed to send email to " + to, e);
         }
     }
+
+    /**
+     * Fire-and-forget entry point for callers with no natural {@link
+     * com.prayerroster.domain.Notification} row to hang a retry sweep off (see
+     * {@link AllowedEmailService}). An exception thrown here never reaches the original caller -
+     * {@code @Async void} methods report failures to the executor's uncaught-exception handler, not
+     * back to the call site - so the catch has to live in this method, not in the caller.
+     */
+    @org.springframework.scheduling.annotation.Async
+    public void sendEmailAsync(String to, String subject, String textBody, String actionUrl, String actionLabel) {
+        try {
+            sendEmail(to, subject, textBody, actionUrl, actionLabel);
+        } catch (MailSendException e) {
+            LOG.warn("Failed to send email to {}", to, e);
+        }
+    }
 }

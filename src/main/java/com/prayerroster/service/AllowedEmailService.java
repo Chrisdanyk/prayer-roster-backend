@@ -8,10 +8,7 @@ import com.prayerroster.web.rest.errors.BadRequestAlertException;
 import com.prayerroster.web.rest.errors.EntityNotFoundException;
 import java.util.List;
 import java.util.Locale;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
-import org.springframework.mail.MailException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
@@ -25,7 +22,6 @@ import org.springframework.util.StringUtils;
 @Transactional
 public class AllowedEmailService {
 
-    private static final Logger LOG = LoggerFactory.getLogger(AllowedEmailService.class);
     private static final String ENTITY_NAME = "allowedEmail";
 
     private final AllowedEmailRepository allowedEmailRepository;
@@ -74,11 +70,7 @@ public class AllowedEmailService {
         String baseUrl = applicationProperties.getFrontend().getBaseUrl();
         String actionUrl = StringUtils.hasText(baseUrl) ? baseUrl : null;
         String actionLabel = actionUrl != null ? cta : null;
-        try {
-            mailService.sendEmail(email, subject, body, actionUrl, actionLabel);
-        } catch (MailException e) {
-            LOG.warn("Failed to send invitation email to {}", email, e);
-        }
+        mailService.sendEmailAsync(email, subject, body, actionUrl, actionLabel);
     }
 
     public void resend(Long id) {
