@@ -79,7 +79,7 @@ public class MailService {
     public void sendEmailAsync(String to, String subject, String textBody, String actionUrl, String actionLabel) {
         try {
             sendEmail(to, subject, textBody, actionUrl, actionLabel);
-        } catch (MailSendException e) {
+        } catch (RuntimeException e) {
             LOG.warn("Failed to send email to {}", to, e);
         }
     }

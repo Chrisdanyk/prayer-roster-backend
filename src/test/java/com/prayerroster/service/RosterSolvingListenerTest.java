@@ -1,5 +1,8 @@
 package com.prayerroster.service;
 
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verify;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -26,5 +29,23 @@ class RosterSolvingListenerTest {
         listener.onRosterGenerationRequested(new RosterGenerationRequestedEvent(42L));
 
         verify(rosterSolvingService).solveAndApply(42L);
+    }
+
+    @Test
+    void onRosterGenerationRequested_marksTheGenerationFailedWhenTheSolveThrows() {
+        doThrow(new RuntimeException("Timefold blew up")).when(rosterSolvingService).solveAndApply(42L);
+
+        listener.onRosterGenerationRequested(new RosterGenerationRequestedEvent(42L));
+
+        verify(rosterSolvingService).markFailed(eq(42L), anyString());
+    }
+
+    @Test
+    void onRosterGenerationRequested_fallsBackToTheExceptionClassNameWhenTheMessageIsNull() {
+        doThrow(new RuntimeException()).when(rosterSolvingService).solveAndApply(42L);
+
+        listener.onRosterGenerationRequested(new RosterGenerationRequestedEvent(42L));
+
+        verify(rosterSolvingService).markFailed(eq(42L), eq("RuntimeException"));
     }
 }

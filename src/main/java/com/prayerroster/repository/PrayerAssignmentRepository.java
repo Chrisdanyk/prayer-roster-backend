@@ -43,6 +43,11 @@ public interface PrayerAssignmentRepository extends JpaRepository<PrayerAssignme
      * com.prayerroster.service.RosterSolvingService} solves and applies. {@code user} is left-joined,
      * not inner-joined: a brand-new generation's assignments are all still unfilled at this point.
      */
-    @Query("select distinct a from PrayerAssignment a join fetch a.session s left join fetch a.user where a.generation.id = :generationId")
+    @Query(
+        "select distinct a from PrayerAssignment a " +
+        "join fetch a.session s left join fetch a.user " +
+        "where a.generation.id = :generationId " +
+        "order by s.date, a.role"
+    )
     List<PrayerAssignment> findByGenerationIdWithSessionAndUser(@Param("generationId") Long generationId);
 }

@@ -28,6 +28,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -172,5 +173,25 @@ public class RosterSolvingService {
         rosterRepository.save(roster);
         rosterGenerationRepository.save(generation);
         return feasible;
+    }
+
+    /**
+     * Records a solve failure that {@link #solveAndApply(Long)} never got the chance to record
+     * itself - e.g. a Timefold internal error, an OOM, or a DB error thrown mid-solve, all of which
+     * roll back {@code solveAndApply}'s own transaction and take its writes with them. Runs in a
+     * brand-new, independent transaction ({@code REQUIRES_NEW}) precisely so this write survives
+     * that rollback. Never throws itself: if the generation has somehow already vanished by the
+     * time this runs, that is logged-and-ignored territory, not a reason to mask the original
+     * failure with a new one.
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void markFailed(Long generationId, String errorMessage) {
+        rosterGenerationRepository
+            .findById(generationId)
+            .ifPresent(generation -> {
+                generation.setStatus(RosterGenerationStatus.FAILED);
+                generation.setErrorMessage(errorMessage);
+                rosterGenerationRepository.save(generation);
+            });
     }
 }

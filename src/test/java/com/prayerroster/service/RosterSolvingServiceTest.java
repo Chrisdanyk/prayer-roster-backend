@@ -388,4 +388,25 @@ class RosterSolvingServiceTest {
             () -> service.solveAndApply(404L)
         );
     }
+
+    @Test
+    void markFailed_setsStatusAndErrorMessageAndSaves() {
+        RosterGeneration generation = generation(roster(), RosterGenerationTrigger.MANUAL);
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+
+        service.markFailed(9L, "Timefold blew up");
+
+        assertThat(generation.getStatus()).isEqualTo(RosterGenerationStatus.FAILED);
+        assertThat(generation.getErrorMessage()).isEqualTo("Timefold blew up");
+        verify(rosterGenerationRepository).save(generation);
+    }
+
+    @Test
+    void markFailed_doesNothingWhenGenerationNoLongerExists() {
+        when(rosterGenerationRepository.findById(404L)).thenReturn(Optional.empty());
+
+        service.markFailed(404L, "Timefold blew up");
+
+        verify(rosterGenerationRepository, never()).save(any());
+    }
 }
