@@ -27,6 +27,7 @@ import java.util.Objects;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Shared "solve this planning problem and apply the outcome" orchestration, used by both initial
@@ -43,6 +44,7 @@ import org.springframework.stereotype.Service;
  * generate noise.
  */
 @Service
+@Transactional
 public class RosterSolvingService {
 
     private final RosterRepository rosterRepository;

@@ -2,6 +2,7 @@ package com.prayerroster.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
@@ -162,6 +163,7 @@ class RosterSolvingServiceTest {
         assertThat(generation.getFeasible()).isTrue();
         verify(rosterRepository).save(roster);
         verify(rosterGenerationRepository).save(generation);
+        verify(userAvailabilityRepository).findActiveOverlapping(roster.getPeriodFrom(), roster.getPeriodTo());
     }
 
     @Test
@@ -312,6 +314,49 @@ class RosterSolvingServiceTest {
         service.solveAndApply(9L);
 
         assertThat(managed.getSession().isRequiresRescheduling()).isFalse();
+    }
+
+    @Test
+    void solveAndApply_batchesNotificationsAndClearsTheFlagOnceWhenTwoAssignmentsShareASession() {
+        Roster roster = roster();
+        RosterGeneration generation = generation(roster, RosterGenerationTrigger.RESCHEDULE);
+        PrayerSession sharedSession = new PrayerSession();
+        sharedSession.setId(1L);
+        sharedSession.setDate(LocalDate.of(2026, 9, 6));
+        sharedSession.setRequiresRescheduling(true);
+        PrayerAssignment moderatorAssignment = new PrayerAssignment();
+        moderatorAssignment.setId(1L);
+        moderatorAssignment.setRole(PrayerAssignmentRole.MODERATOR);
+        moderatorAssignment.setSession(sharedSession);
+        PrayerAssignment preacherAssignment = new PrayerAssignment();
+        preacherAssignment.setId(2L);
+        preacherAssignment.setRole(PrayerAssignmentRole.PREACHER);
+        preacherAssignment.setSession(sharedSession);
+        User newUser = testUser("u1");
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+        when(prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(9L)).thenReturn(
+            List.of(moderatorAssignment, preacherAssignment)
+        );
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(newUser));
+        when(solverService.solve(eq(9L), any())).thenAnswer(inv -> {
+            RosterSolution problem = inv.getArgument(1);
+            RosterSolution solved = new RosterSolution(
+                problem.getEligibleUsers(),
+                problem.getUnavailabilities(),
+                List.of(solvedClone(moderatorAssignment, newUser), solvedClone(preacherAssignment, newUser))
+            );
+            solved.setScore(HardSoftScore.of(0, 0));
+            return solved;
+        });
+
+        service.solveAndApply(9L);
+
+        verify(notificationService).notifyAssignmentsPublished(
+            eq(newUser),
+            argThat(list -> list.size() == 2 && list.containsAll(List.of(moderatorAssignment, preacherAssignment)))
+        );
+        verify(notificationService, never()).notifyAssignmentsRemoved(any(), any());
+        assertThat(sharedSession.isRequiresRescheduling()).isFalse();
     }
 
     @Test
