@@ -19,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
+import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
 import tech.jhipster.config.JHipsterProperties;
 
@@ -67,5 +68,31 @@ class MailServiceTest {
         doThrow(new MailSendException("boom")).when(javaMailSender).send(any(MimeMessage.class));
 
         assertThatThrownBy(() -> service.sendEmail("jean@example.com", "Sujet", "Corps")).isInstanceOf(MailSendException.class);
+    }
+
+    @Test
+    void sendEmail_withoutAction_leavesActionVariablesNull() throws Exception {
+        when(javaMailSender.createMimeMessage()).thenReturn(realMimeMessage());
+        ArgumentCaptor<Context> contextCaptor = ArgumentCaptor.forClass(Context.class);
+        when(templateEngine.process(eq("mail/notification"), contextCaptor.capture())).thenReturn("<p>Corps</p>");
+
+        service.sendEmail("jean@example.com", "Sujet", "Corps");
+
+        Context context = contextCaptor.getValue();
+        assertThat(context.getVariable("actionUrl")).isNull();
+        assertThat(context.getVariable("actionLabel")).isNull();
+    }
+
+    @Test
+    void sendEmail_withAction_passesTheLinkAndLabelToTheTemplate() throws Exception {
+        when(javaMailSender.createMimeMessage()).thenReturn(realMimeMessage());
+        ArgumentCaptor<Context> contextCaptor = ArgumentCaptor.forClass(Context.class);
+        when(templateEngine.process(eq("mail/notification"), contextCaptor.capture())).thenReturn("<p>Corps</p>");
+
+        service.sendEmail("jean@example.com", "Sujet", "Corps", "https://app.example.com", "Se connecter");
+
+        Context context = contextCaptor.getValue();
+        assertThat(context.getVariable("actionUrl")).isEqualTo("https://app.example.com");
+        assertThat(context.getVariable("actionLabel")).isEqualTo("Se connecter");
     }
 }

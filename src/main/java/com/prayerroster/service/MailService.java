@@ -35,9 +35,19 @@ public class MailService {
     }
 
     public void sendEmail(String to, String subject, String textBody) {
+        sendEmail(to, subject, textBody, null, null);
+    }
+
+    /**
+     * @param actionUrl when non-null, the template renders a clickable call-to-action button
+     *     labelled {@code actionLabel}; when null, the email is text-only.
+     */
+    public void sendEmail(String to, String subject, String textBody, String actionUrl, String actionLabel) {
         LOG.debug("Sending email to '{}' with subject '{}'", to, subject);
         Context context = new Context();
         context.setVariable("body", textBody);
+        context.setVariable("actionUrl", actionUrl);
+        context.setVariable("actionLabel", actionLabel);
         String htmlContent = templateEngine.process("mail/notification", context);
 
         MimeMessage mimeMessage = javaMailSender.createMimeMessage();

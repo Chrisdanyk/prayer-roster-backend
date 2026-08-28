@@ -41,4 +41,11 @@ public class AllowedEmailResource {
         allowedEmailService.delete(id);
         return ResponseEntity.noContent().build();
     }
+
+    @PostMapping("/{id}/resend")
+    @PreAuthorize("hasAuthority('PERM_USER_CREATE')")
+    public ResponseEntity<Void> resendInvitation(@PathVariable Long id) {
+        allowedEmailService.resend(id);
+        return ResponseEntity.noContent().build();
+    }
 }

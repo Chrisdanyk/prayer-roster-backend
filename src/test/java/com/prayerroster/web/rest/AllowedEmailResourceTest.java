@@ -100,4 +100,11 @@ class AllowedEmailResourceTest {
 
         verify(allowedEmailService).delete(1L);
     }
+
+    @Test
+    void resendInvitation_returns204() throws Exception {
+        mockMvc.perform(post("/api/allowed-emails/{id}/resend", 1L)).andExpect(status().isNoContent());
+
+        verify(allowedEmailService).resend(1L);
+    }
 }
