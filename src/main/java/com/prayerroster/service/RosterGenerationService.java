@@ -12,6 +12,7 @@ import com.prayerroster.web.rest.errors.BadRequestAlertException;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -40,7 +41,7 @@ public class RosterGenerationService {
     private final PrayerSessionRepository prayerSessionRepository;
     private final PrayerAssignmentRepository prayerAssignmentRepository;
     private final WeeklyPrayerConfigurationRepository weeklyPrayerConfigurationRepository;
-    private final RosterSolvingService rosterSolvingService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public RosterGenerationService(
         RosterRepository rosterRepository,
@@ -48,14 +49,14 @@ public class RosterGenerationService {
         PrayerSessionRepository prayerSessionRepository,
         PrayerAssignmentRepository prayerAssignmentRepository,
         WeeklyPrayerConfigurationRepository weeklyPrayerConfigurationRepository,
-        RosterSolvingService rosterSolvingService
+        ApplicationEventPublisher eventPublisher
     ) {
         this.rosterRepository = rosterRepository;
         this.rosterGenerationRepository = rosterGenerationRepository;
         this.prayerSessionRepository = prayerSessionRepository;
         this.prayerAssignmentRepository = prayerAssignmentRepository;
         this.weeklyPrayerConfigurationRepository = weeklyPrayerConfigurationRepository;
-        this.rosterSolvingService = rosterSolvingService;
+        this.eventPublisher = eventPublisher;
     }
 
     public RosterDTO generate(GenerateRosterRequest request) {
@@ -100,7 +101,7 @@ public class RosterGenerationService {
             assignments.addAll(createSession(roster, generation, required));
         }
 
-        rosterSolvingService.solveAndApply(roster, generation, assignments, from, to, RosterStatus.DRAFT);
+        eventPublisher.publishEvent(new RosterGenerationRequestedEvent(generation.getId()));
 
         return RosterDTO.from(roster);
     }

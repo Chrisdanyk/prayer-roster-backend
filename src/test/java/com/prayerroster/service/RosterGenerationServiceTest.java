@@ -3,7 +3,6 @@ package com.prayerroster.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -50,7 +49,7 @@ class RosterGenerationServiceTest {
     private WeeklyPrayerConfigurationRepository weeklyPrayerConfigurationRepository;
 
     @Mock
-    private RosterSolvingService rosterSolvingService;
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private RosterGenerationService service;
 
@@ -62,7 +61,7 @@ class RosterGenerationServiceTest {
             prayerSessionRepository,
             prayerAssignmentRepository,
             weeklyPrayerConfigurationRepository,
-            rosterSolvingService
+            eventPublisher
         );
     }
 
@@ -106,15 +105,6 @@ class RosterGenerationServiceTest {
         });
     }
 
-    /** By default, the mocked solving service marks the roster PUBLISHED and reports feasible. */
-    private void stubFeasibleSolve() {
-        when(rosterSolvingService.solveAndApply(any(), any(), any(), any(), any(), any())).thenAnswer(inv -> {
-            Roster roster = inv.getArgument(0);
-            roster.setStatus(RosterStatus.PUBLISHED);
-            return true;
-        });
-    }
-
     @Test
     void generate_rejectsWhenFromAfterTo() {
         var request = new GenerateRosterRequest(LocalDate.of(2026, 9, 10), LocalDate.of(2026, 9, 1));
@@ -145,7 +135,6 @@ class RosterGenerationServiceTest {
     @Test
     void generate_createsSessionsWithBothRolesOnPreachingDaysAndModeratorOnlyOtherwiseAndDelegatesSolving() {
         stubSaves();
-        stubFeasibleSolve();
         // 2026-09-06 is a Sunday (preaching day), 2026-09-07 a Monday (moderation-only).
         var request = new GenerateRosterRequest(LocalDate.of(2026, 9, 6), LocalDate.of(2026, 9, 7));
         when(prayerSessionRepository.existsByDateBetween(any(), any())).thenReturn(false);
@@ -155,10 +144,13 @@ class RosterGenerationServiceTest {
 
         RosterDTO result = service.generate(request);
 
-        assertThat(result.status()).isEqualTo(RosterStatus.PUBLISHED);
+        assertThat(result.status()).isEqualTo(RosterStatus.DRAFT);
         assertThat(result.periodFrom()).isEqualTo(request.from());
         assertThat(result.periodTo()).isEqualTo(request.to());
-        verify(rosterSolvingService).solveAndApply(any(), any(), any(), eq(request.from()), eq(request.to()), eq(RosterStatus.DRAFT));
+
+        ArgumentCaptor<RosterGenerationRequestedEvent> eventCaptor = ArgumentCaptor.forClass(RosterGenerationRequestedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().generationId()).isNotNull();
 
         ArgumentCaptor<PrayerSession> captor = ArgumentCaptor.forClass(PrayerSession.class);
         verify(prayerSessionRepository, times(2)).save(captor.capture());
@@ -179,7 +171,6 @@ class RosterGenerationServiceTest {
     @Test
     void generate_picksTheConfigVersionThatCoversEachDateWhenTheConfigChangedMidPeriod() {
         stubSaves();
-        stubFeasibleSolve();
         // Old version (moderation-only Wednesdays) covers 9/1-9/8; new version (Wednesday preaching) from 9/9.
         var oldVersion = configVersion(LocalDate.of(2026, 1, 1), LocalDate.of(2026, 9, 8), Set.of());
         var newVersion = configVersion(LocalDate.of(2026, 9, 9), null, Set.of(DayOfWeek.WEDNESDAY));
@@ -234,7 +225,6 @@ class RosterGenerationServiceTest {
     @Test
     void generate_singleArgOverloadDefaultsTriggerToManual() {
         stubSaves();
-        stubFeasibleSolve();
         var request = new GenerateRosterRequest(LocalDate.of(2026, 9, 6), LocalDate.of(2026, 9, 6));
         when(prayerSessionRepository.existsByDateBetween(any(), any())).thenReturn(false);
         when(weeklyPrayerConfigurationRepository.findAllWithDaysOrderByEffectiveFromDesc()).thenReturn(
@@ -251,7 +241,6 @@ class RosterGenerationServiceTest {
     @Test
     void generate_withExplicitTriggerSetsItOnTheGeneration() {
         stubSaves();
-        stubFeasibleSolve();
         var request = new GenerateRosterRequest(LocalDate.of(2026, 9, 6), LocalDate.of(2026, 9, 6));
         when(prayerSessionRepository.existsByDateBetween(any(), any())).thenReturn(false);
         when(weeklyPrayerConfigurationRepository.findAllWithDaysOrderByEffectiveFromDesc()).thenReturn(
@@ -263,25 +252,5 @@ class RosterGenerationServiceTest {
         ArgumentCaptor<RosterGeneration> captor = ArgumentCaptor.forClass(RosterGeneration.class);
         verify(rosterGenerationRepository).save(captor.capture());
         assertThat(captor.getValue().getTrigger()).isEqualTo(RosterGenerationTrigger.SCHEDULED_CRON);
-    }
-
-    @Test
-    void generate_reflectsRosterStateWhenSolvingReportsInfeasible() {
-        stubSaves();
-        when(rosterSolvingService.solveAndApply(any(), any(), any(), any(), any(), any())).thenAnswer(inv -> {
-            Roster roster = inv.getArgument(0);
-            roster.setStatus(RosterStatus.DRAFT);
-            return false;
-        });
-        var request = new GenerateRosterRequest(LocalDate.of(2026, 9, 6), LocalDate.of(2026, 9, 6));
-        when(prayerSessionRepository.existsByDateBetween(any(), any())).thenReturn(false);
-        when(weeklyPrayerConfigurationRepository.findAllWithDaysOrderByEffectiveFromDesc()).thenReturn(
-            List.of(configVersion(LocalDate.of(2026, 1, 1), null, Set.of(DayOfWeek.SUNDAY)))
-        );
-
-        RosterDTO result = service.generate(request);
-
-        assertThat(result.status()).isEqualTo(RosterStatus.DRAFT);
-        assertThat(result.publishedAt()).isNull();
     }
 }
