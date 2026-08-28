@@ -1,21 +1,26 @@
 package com.prayerroster.service;
 
 import com.prayerroster.domain.PrayerAssignment;
+import com.prayerroster.domain.PrayerSession;
 import com.prayerroster.domain.Roster;
 import com.prayerroster.domain.RosterGeneration;
 import com.prayerroster.domain.RosterGenerationStatus;
 import com.prayerroster.domain.RosterStatus;
 import com.prayerroster.domain.User;
 import com.prayerroster.domain.UserAvailability;
+import com.prayerroster.repository.PrayerAssignmentRepository;
 import com.prayerroster.repository.RosterGenerationRepository;
 import com.prayerroster.repository.RosterRepository;
 import com.prayerroster.repository.UserAvailabilityRepository;
 import com.prayerroster.repository.UserRepository;
 import com.prayerroster.scheduling.RosterSolution;
 import com.prayerroster.scheduling.SolverService;
+import com.prayerroster.web.rest.errors.EntityNotFoundException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -42,6 +47,7 @@ public class RosterSolvingService {
 
     private final RosterRepository rosterRepository;
     private final RosterGenerationRepository rosterGenerationRepository;
+    private final PrayerAssignmentRepository prayerAssignmentRepository;
     private final UserRepository userRepository;
     private final UserAvailabilityRepository userAvailabilityRepository;
     private final SolverService solverService;
@@ -50,6 +56,7 @@ public class RosterSolvingService {
     public RosterSolvingService(
         RosterRepository rosterRepository,
         RosterGenerationRepository rosterGenerationRepository,
+        PrayerAssignmentRepository prayerAssignmentRepository,
         UserRepository userRepository,
         UserAvailabilityRepository userAvailabilityRepository,
         SolverService solverService,
@@ -57,27 +64,25 @@ public class RosterSolvingService {
     ) {
         this.rosterRepository = rosterRepository;
         this.rosterGenerationRepository = rosterGenerationRepository;
+        this.prayerAssignmentRepository = prayerAssignmentRepository;
         this.userRepository = userRepository;
         this.userAvailabilityRepository = userAvailabilityRepository;
         this.solverService = solverService;
         this.notificationService = notificationService;
     }
 
-    /**
-     * Solves {@code assignments} against every currently-eligible user and active unavailability
-     * overlapping [{@code availabilityWindowFrom}, {@code availabilityWindowTo}], then applies the
-     * outcome: on a feasible solve, fills in the assignments and publishes {@code roster}; otherwise
-     * records a diagnostic on {@code generation} and falls {@code roster} back to
-     * {@code statusOnInfeasible}. Returns whether the solve was feasible.
-     */
-    public boolean solveAndApply(
-        Roster roster,
-        RosterGeneration generation,
-        List<PrayerAssignment> assignments,
-        LocalDate availabilityWindowFrom,
-        LocalDate availabilityWindowTo,
-        RosterStatus statusOnInfeasible
-    ) {
+    public boolean solveAndApply(Long generationId) {
+        RosterGeneration generation = rosterGenerationRepository
+            .findById(generationId)
+            .orElseThrow(() -> new EntityNotFoundException("Roster generation not found: " + generationId));
+        Roster roster = generation.getRoster();
+        List<PrayerAssignment> assignments = prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(generationId);
+        LocalDate availabilityWindowFrom = generation.getPlanningFrom();
+        LocalDate availabilityWindowTo = generation.getPlanningTo();
+        RosterStatus statusOnInfeasible = generation.getTrigger() == com.prayerroster.domain.RosterGenerationTrigger.RESCHEDULE
+            ? RosterStatus.REQUIRES_RESCHEDULING
+            : RosterStatus.DRAFT;
+
         List<User> eligibleUsers = userRepository.findAllEligibleActive();
         List<UserAvailability> unavailabilities = userAvailabilityRepository.findActiveOverlapping(
             availabilityWindowFrom,
@@ -89,8 +94,6 @@ public class RosterSolvingService {
         long solverDurationMs;
         RosterSolution solved = null;
         if (eligibleUsers.isEmpty()) {
-            // Timefold refuses to solve an empty value range outright, and structurally there is
-            // nothing to gain from trying anyway - zero eligible users can never fill anything.
             hardScore = -assignments.size();
             softScore = 0;
             solverDurationMs = 0;
@@ -113,32 +116,43 @@ public class RosterSolvingService {
                 .getAssignments()
                 .stream()
                 .collect(Collectors.toMap(PrayerAssignment::getId, Function.identity()));
+            Map<User, List<PrayerAssignment>> newlyPublished = new LinkedHashMap<>();
+            Map<User, List<PrayerAssignment>> newlyRemoved = new LinkedHashMap<>();
             for (PrayerAssignment managed : assignments) {
                 User previousUser = managed.getUser();
-                // A feasible solve (hardScore == 0) mathematically guarantees newUser is never null
-                // here: everyAssignmentMustBeFilled contributes a hard violation for every unfilled
-                // assignment, so hardScore couldn't be zero if one existed.
                 User newUser = solvedById.get(managed.getId()).getUser();
                 if (!Objects.equals(previousUser, newUser)) {
                     managed.setUser(newUser);
                     if (previousUser != null) {
-                        notificationService.notifyAssignmentRemoved(previousUser, managed);
+                        newlyRemoved.computeIfAbsent(previousUser, u -> new ArrayList<>()).add(managed);
                     }
-                    notificationService.notifyAssignmentPublished(managed);
+                    newlyPublished.computeIfAbsent(newUser, u -> new ArrayList<>()).add(managed);
                 }
             }
+            newlyRemoved.forEach(notificationService::notifyAssignmentsRemoved);
+            newlyPublished.forEach(notificationService::notifyAssignmentsPublished);
+
             generation.setStatus(RosterGenerationStatus.COMPLETED);
             roster.setStatus(RosterStatus.PUBLISHED);
             roster.setPublishedAt(Instant.now());
+            if (generation.getTrigger() == com.prayerroster.domain.RosterGenerationTrigger.RESCHEDULE) {
+                assignments
+                    .stream()
+                    .map(PrayerAssignment::getSession)
+                    .distinct()
+                    .filter(PrayerSession::isRequiresRescheduling)
+                    .forEach(session -> session.setRequiresRescheduling(false));
+            }
         } else {
             generation.setStatus(RosterGenerationStatus.INFEASIBLE);
             generation.setErrorMessage(
-                solved != null
-                    ? solverService.explainHardConstraintViolations(solved)
-                    : "No active user has any capability (canModerate/canPreach) - configure at least one eligible user first"
+                eligibleUsers.isEmpty()
+                    ? "No active user has any capability (moderator or preacher)"
+                    : solverService.explainHardConstraintViolations(solved)
             );
             roster.setStatus(statusOnInfeasible);
         }
+
         rosterRepository.save(roster);
         rosterGenerationRepository.save(generation);
         return feasible;

@@ -3,6 +3,7 @@ package com.prayerroster.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -15,16 +16,19 @@ import com.prayerroster.domain.PrayerSession;
 import com.prayerroster.domain.Roster;
 import com.prayerroster.domain.RosterGeneration;
 import com.prayerroster.domain.RosterGenerationStatus;
+import com.prayerroster.domain.RosterGenerationTrigger;
 import com.prayerroster.domain.RosterStatus;
 import com.prayerroster.domain.User;
 import com.prayerroster.repository.RosterGenerationRepository;
 import com.prayerroster.repository.RosterRepository;
+import com.prayerroster.repository.PrayerAssignmentRepository;
 import com.prayerroster.repository.UserAvailabilityRepository;
 import com.prayerroster.repository.UserRepository;
 import com.prayerroster.scheduling.RosterSolution;
 import com.prayerroster.scheduling.SolverService;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,6 +43,9 @@ class RosterSolvingServiceTest {
 
     @Mock
     private RosterGenerationRepository rosterGenerationRepository;
+
+    @Mock
+    private PrayerAssignmentRepository prayerAssignmentRepository;
 
     @Mock
     private UserRepository userRepository;
@@ -59,12 +66,13 @@ class RosterSolvingServiceTest {
         service = new RosterSolvingService(
             rosterRepository,
             rosterGenerationRepository,
+            prayerAssignmentRepository,
             userRepository,
             userAvailabilityRepository,
             solverService,
             notificationService
         );
-        when(userAvailabilityRepository.findActiveOverlapping(any(), any())).thenReturn(List.of());
+        lenient().when(userAvailabilityRepository.findActiveOverlapping(any(), any())).thenReturn(List.of());
     }
 
     private static User testUser(String id) {
@@ -97,9 +105,13 @@ class RosterSolvingServiceTest {
         return roster;
     }
 
-    private static RosterGeneration generation() {
+    private static RosterGeneration generation(Roster roster, RosterGenerationTrigger trigger) {
         RosterGeneration generation = new RosterGeneration();
         generation.setId(9L);
+        generation.setRoster(roster);
+        generation.setTrigger(trigger);
+        generation.setPlanningFrom(roster.getPeriodFrom());
+        generation.setPlanningTo(roster.getPeriodTo());
         return generation;
     }
 
@@ -121,12 +133,13 @@ class RosterSolvingServiceTest {
 
     @Test
     void solveAndApply_publishesRosterAndFillsAssignmentsWhenFeasible() {
-        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
-        PrayerAssignment managed = assignment(1L, null);
-        RosterGeneration generation = generation();
         Roster roster = roster();
-
-        when(solverService.solve(eq(generation.getId()), any())).thenAnswer(inv -> {
+        RosterGeneration generation = generation(roster, RosterGenerationTrigger.MANUAL);
+        PrayerAssignment managed = assignment(1L, null);
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+        when(prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(9L)).thenReturn(List.of(managed));
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
+        when(solverService.solve(eq(9L), any())).thenAnswer(inv -> {
             RosterSolution problem = inv.getArgument(1);
             RosterSolution solved = new RosterSolution(
                 problem.getEligibleUsers(),
@@ -137,14 +150,7 @@ class RosterSolvingServiceTest {
             return solved;
         });
 
-        boolean feasible = service.solveAndApply(
-            roster,
-            generation,
-            List.of(managed),
-            roster.getPeriodFrom(),
-            roster.getPeriodTo(),
-            RosterStatus.DRAFT
-        );
+        boolean feasible = service.solveAndApply(9L);
 
         assertThat(feasible).isTrue();
         assertThat(managed.getUser()).isNotNull();
@@ -160,12 +166,13 @@ class RosterSolvingServiceTest {
 
     @Test
     void solveAndApply_notifiesOnlyTheNewlyAssignedUserWhenSlotWasPreviouslyEmpty() {
-        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
-        PrayerAssignment managed = assignment(1L, null);
-        RosterGeneration generation = generation();
         Roster roster = roster();
-
-        when(solverService.solve(eq(generation.getId()), any())).thenAnswer(inv -> {
+        RosterGeneration generation = generation(roster, RosterGenerationTrigger.MANUAL);
+        PrayerAssignment managed = assignment(1L, null);
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+        when(prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(9L)).thenReturn(List.of(managed));
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
+        when(solverService.solve(eq(9L), any())).thenAnswer(inv -> {
             RosterSolution problem = inv.getArgument(1);
             RosterSolution solved = new RosterSolution(
                 problem.getEligibleUsers(),
@@ -176,21 +183,22 @@ class RosterSolvingServiceTest {
             return solved;
         });
 
-        service.solveAndApply(roster, generation, List.of(managed), roster.getPeriodFrom(), roster.getPeriodTo(), RosterStatus.DRAFT);
+        service.solveAndApply(9L);
 
-        verify(notificationService).notifyAssignmentPublished(managed);
-        verify(notificationService, never()).notifyAssignmentRemoved(any(), any());
+        verify(notificationService).notifyAssignmentsPublished(eq(testUser("u1")), eq(List.of(managed)));
+        verify(notificationService, never()).notifyAssignmentsRemoved(any(), any());
     }
 
     @Test
     void solveAndApply_notifiesBothUsersWhenReassignedToADifferentUser() {
-        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1"), testUser("u2")));
+        Roster roster = roster();
+        RosterGeneration generation = generation(roster, RosterGenerationTrigger.MANUAL);
         User previousUser = testUser("u1");
         PrayerAssignment managed = assignment(1L, previousUser);
-        RosterGeneration generation = generation();
-        Roster roster = roster();
-
-        when(solverService.solve(eq(generation.getId()), any())).thenAnswer(inv -> {
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+        when(prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(9L)).thenReturn(List.of(managed));
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(previousUser, testUser("u2")));
+        when(solverService.solve(eq(9L), any())).thenAnswer(inv -> {
             RosterSolution problem = inv.getArgument(1);
             RosterSolution solved = new RosterSolution(
                 problem.getEligibleUsers(),
@@ -201,22 +209,23 @@ class RosterSolvingServiceTest {
             return solved;
         });
 
-        service.solveAndApply(roster, generation, List.of(managed), roster.getPeriodFrom(), roster.getPeriodTo(), RosterStatus.DRAFT);
+        service.solveAndApply(9L);
 
-        verify(notificationService).notifyAssignmentRemoved(eq(previousUser), eq(managed));
-        verify(notificationService).notifyAssignmentPublished(managed);
+        verify(notificationService).notifyAssignmentsRemoved(eq(previousUser), eq(List.of(managed)));
+        verify(notificationService).notifyAssignmentsPublished(eq(testUser("u2")), eq(List.of(managed)));
         assertThat(managed.getUser().getId()).isEqualTo("u2");
     }
 
     @Test
     void solveAndApply_doesNotNotifyWhenAssignmentIsUnchanged() {
-        User sameUser = testUser("u1");
-        when(userRepository.findAllEligibleActive()).thenReturn(List.of(sameUser));
-        PrayerAssignment managed = assignment(1L, sameUser);
-        RosterGeneration generation = generation();
         Roster roster = roster();
-
-        when(solverService.solve(eq(generation.getId()), any())).thenAnswer(inv -> {
+        RosterGeneration generation = generation(roster, RosterGenerationTrigger.MANUAL);
+        User sameUser = testUser("u1");
+        PrayerAssignment managed = assignment(1L, sameUser);
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+        when(prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(9L)).thenReturn(List.of(managed));
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(sameUser));
+        when(solverService.solve(eq(9L), any())).thenAnswer(inv -> {
             RosterSolution problem = inv.getArgument(1);
             RosterSolution solved = new RosterSolution(
                 problem.getEligibleUsers(),
@@ -227,36 +236,31 @@ class RosterSolvingServiceTest {
             return solved;
         });
 
-        service.solveAndApply(roster, generation, List.of(managed), roster.getPeriodFrom(), roster.getPeriodTo(), RosterStatus.DRAFT);
+        service.solveAndApply(9L);
 
         verifyNoInteractions(notificationService);
     }
 
     @Test
-    void solveAndApply_fallsBackToGivenStatusAndRecordsDiagnosticWhenInfeasible() {
-        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
-        RosterGeneration generation = generation();
+    void solveAndApply_fallsBackToDraftAndRecordsDiagnosticWhenInfeasibleOnAFreshGeneration() {
         Roster roster = roster();
-        roster.setStatus(RosterStatus.REQUIRES_RESCHEDULING);
-
-        when(solverService.solve(eq(generation.getId()), any())).thenAnswer(inv -> {
+        roster.setStatus(RosterStatus.DRAFT);
+        RosterGeneration generation = generation(roster, RosterGenerationTrigger.MANUAL);
+        PrayerAssignment managed = assignment(1L, null);
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+        when(prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(9L)).thenReturn(List.of(managed));
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
+        when(solverService.solve(eq(9L), any())).thenAnswer(inv -> {
             RosterSolution problem = inv.getArgument(1);
             problem.setScore(HardSoftScore.of(-2, 0));
             return problem;
         });
         when(solverService.explainHardConstraintViolations(any())).thenReturn("everyAssignmentMustBeFilled: 2 violation(s)");
 
-        boolean feasible = service.solveAndApply(
-            roster,
-            generation,
-            List.of(assignment(1L, null)),
-            roster.getPeriodFrom(),
-            roster.getPeriodTo(),
-            RosterStatus.REQUIRES_RESCHEDULING
-        );
+        boolean feasible = service.solveAndApply(9L);
 
         assertThat(feasible).isFalse();
-        assertThat(roster.getStatus()).isEqualTo(RosterStatus.REQUIRES_RESCHEDULING);
+        assertThat(roster.getStatus()).isEqualTo(RosterStatus.DRAFT);
         assertThat(generation.getStatus()).isEqualTo(RosterGenerationStatus.INFEASIBLE);
         assertThat(generation.getFeasible()).isFalse();
         assertThat(generation.getErrorMessage()).isEqualTo("everyAssignmentMustBeFilled: 2 violation(s)");
@@ -264,19 +268,63 @@ class RosterSolvingServiceTest {
     }
 
     @Test
-    void solveAndApply_skipsSolvingWhenNoEligibleUserExists() {
-        when(userRepository.findAllEligibleActive()).thenReturn(List.of());
-        RosterGeneration generation = generation();
+    void solveAndApply_fallsBackToRequiresReschedulingWhenInfeasibleOnAReschedule() {
         Roster roster = roster();
+        roster.setStatus(RosterStatus.REQUIRES_RESCHEDULING);
+        RosterGeneration generation = generation(roster, RosterGenerationTrigger.RESCHEDULE);
+        PrayerAssignment managed = assignment(1L, null);
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+        when(prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(9L)).thenReturn(List.of(managed));
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1")));
+        when(solverService.solve(eq(9L), any())).thenAnswer(inv -> {
+            RosterSolution problem = inv.getArgument(1);
+            problem.setScore(HardSoftScore.of(-2, 0));
+            return problem;
+        });
+        when(solverService.explainHardConstraintViolations(any())).thenReturn("everyAssignmentMustBeFilled: 2 violation(s)");
 
-        boolean feasible = service.solveAndApply(
-            roster,
-            generation,
-            List.of(assignment(1L, null), assignment(2L, null)),
-            roster.getPeriodFrom(),
-            roster.getPeriodTo(),
-            RosterStatus.DRAFT
+        boolean feasible = service.solveAndApply(9L);
+
+        assertThat(feasible).isFalse();
+        assertThat(roster.getStatus()).isEqualTo(RosterStatus.REQUIRES_RESCHEDULING);
+    }
+
+    @Test
+    void solveAndApply_clearsRequiresReschedulingOnTheAffectedSessionWhenAFeasibleRescheduleSucceeds() {
+        Roster roster = roster();
+        RosterGeneration generation = generation(roster, RosterGenerationTrigger.RESCHEDULE);
+        PrayerAssignment managed = assignment(1L, testUser("u1"));
+        managed.getSession().setRequiresRescheduling(true);
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+        when(prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(9L)).thenReturn(List.of(managed));
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of(testUser("u1"), testUser("u2")));
+        when(solverService.solve(eq(9L), any())).thenAnswer(inv -> {
+            RosterSolution problem = inv.getArgument(1);
+            RosterSolution solved = new RosterSolution(
+                problem.getEligibleUsers(),
+                problem.getUnavailabilities(),
+                List.of(solvedClone(managed, testUser("u2")))
+            );
+            solved.setScore(HardSoftScore.of(0, 0));
+            return solved;
+        });
+
+        service.solveAndApply(9L);
+
+        assertThat(managed.getSession().isRequiresRescheduling()).isFalse();
+    }
+
+    @Test
+    void solveAndApply_skipsSolvingWhenNoEligibleUserExists() {
+        Roster roster = roster();
+        RosterGeneration generation = generation(roster, RosterGenerationTrigger.MANUAL);
+        when(rosterGenerationRepository.findById(9L)).thenReturn(Optional.of(generation));
+        when(prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(9L)).thenReturn(
+            List.of(assignment(1L, null), assignment(2L, null))
         );
+        when(userRepository.findAllEligibleActive()).thenReturn(List.of());
+
+        boolean feasible = service.solveAndApply(9L);
 
         assertThat(feasible).isFalse();
         assertThat(generation.getHardScore()).isEqualTo(-2);
@@ -284,5 +332,15 @@ class RosterSolvingServiceTest {
         assertThat(generation.getErrorMessage()).contains("No active user has any capability");
         verify(solverService, never()).solve(any(), any());
         verifyNoInteractions(notificationService);
+    }
+
+    @Test
+    void solveAndApply_throwsWhenGenerationIsMissing() {
+        when(rosterGenerationRepository.findById(404L)).thenReturn(Optional.empty());
+
+        org.junit.jupiter.api.Assertions.assertThrows(
+            com.prayerroster.web.rest.errors.EntityNotFoundException.class,
+            () -> service.solveAndApply(404L)
+        );
     }
 }
