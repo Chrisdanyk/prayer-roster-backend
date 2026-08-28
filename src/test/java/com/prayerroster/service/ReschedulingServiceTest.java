@@ -3,7 +3,6 @@ package com.prayerroster.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -45,13 +44,13 @@ class ReschedulingServiceTest {
     private PrayerSessionRepository prayerSessionRepository;
 
     @Mock
-    private RosterSolvingService rosterSolvingService;
+    private org.springframework.context.ApplicationEventPublisher eventPublisher;
 
     private ReschedulingService service;
 
     @BeforeEach
     void setUp() {
-        service = new ReschedulingService(rosterRepository, rosterGenerationRepository, prayerSessionRepository, rosterSolvingService);
+        service = new ReschedulingService(rosterRepository, rosterGenerationRepository, prayerSessionRepository, eventPublisher);
     }
 
     private static Roster roster(RosterStatus status) {
@@ -111,14 +110,13 @@ class ReschedulingServiceTest {
     }
 
     @Test
-    void reschedule_pinsUnflaggedAssignmentsAndDelegatesSolving() {
+    void reschedule_pinsUnflaggedAssignmentsAndPublishesTheSolveRequest() {
         stubGenerationSave();
         Roster roster = roster(RosterStatus.REQUIRES_RESCHEDULING);
         PrayerSession flagged = session(1L, true);
         PrayerSession unflagged = session(2L, false);
         when(rosterRepository.findById(1L)).thenReturn(Optional.of(roster));
         when(prayerSessionRepository.findByRosterIdWithAssignments(1L)).thenReturn(List.of(flagged, unflagged));
-        when(rosterSolvingService.solveAndApply(eq(roster), any(), any(), eq(roster.getPeriodFrom()), eq(roster.getPeriodTo()), eq(RosterStatus.REQUIRES_RESCHEDULING))).thenReturn(true);
 
         RosterDTO result = service.reschedule(1L, "Indisponibilité");
 
@@ -127,7 +125,6 @@ class ReschedulingServiceTest {
         PrayerAssignment unflaggedAssignment = unflagged.getAssignments().iterator().next();
         assertThat(flaggedAssignment.isLocked()).isFalse();
         assertThat(unflaggedAssignment.isLocked()).isTrue();
-        assertThat(flagged.isRequiresRescheduling()).isFalse();
 
         ArgumentCaptor<RosterGeneration> captor = ArgumentCaptor.forClass(RosterGeneration.class);
         verify(rosterGenerationRepository).save(captor.capture());
@@ -137,19 +134,9 @@ class ReschedulingServiceTest {
         assertThat(generation.getRescheduleReason()).isEqualTo("Indisponibilité");
         assertThat(flaggedAssignment.getGeneration()).isEqualTo(generation);
         assertThat(unflaggedAssignment.getGeneration()).isEqualTo(generation);
-    }
 
-    @Test
-    void reschedule_leavesSessionFlaggedWhenSolveStaysInfeasible() {
-        stubGenerationSave();
-        Roster roster = roster(RosterStatus.REQUIRES_RESCHEDULING);
-        PrayerSession flagged = session(1L, true);
-        when(rosterRepository.findById(1L)).thenReturn(Optional.of(roster));
-        when(prayerSessionRepository.findByRosterIdWithAssignments(1L)).thenReturn(List.of(flagged));
-        when(rosterSolvingService.solveAndApply(any(), any(), any(), any(), any(), any())).thenReturn(false);
-
-        service.reschedule(1L, null);
-
-        assertThat(flagged.isRequiresRescheduling()).isTrue();
+        ArgumentCaptor<RosterGenerationRequestedEvent> eventCaptor = ArgumentCaptor.forClass(RosterGenerationRequestedEvent.class);
+        verify(eventPublisher).publishEvent(eventCaptor.capture());
+        assertThat(eventCaptor.getValue().generationId()).isEqualTo(generation.getId());
     }
 }

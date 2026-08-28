@@ -14,6 +14,7 @@ import com.prayerroster.service.dto.RosterDTO;
 import com.prayerroster.web.rest.errors.BadRequestAlertException;
 import com.prayerroster.web.rest.errors.EntityNotFoundException;
 import java.util.List;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -34,18 +35,18 @@ public class ReschedulingService {
     private final RosterRepository rosterRepository;
     private final RosterGenerationRepository rosterGenerationRepository;
     private final PrayerSessionRepository prayerSessionRepository;
-    private final RosterSolvingService rosterSolvingService;
+    private final ApplicationEventPublisher eventPublisher;
 
     public ReschedulingService(
         RosterRepository rosterRepository,
         RosterGenerationRepository rosterGenerationRepository,
         PrayerSessionRepository prayerSessionRepository,
-        RosterSolvingService rosterSolvingService
+        ApplicationEventPublisher eventPublisher
     ) {
         this.rosterRepository = rosterRepository;
         this.rosterGenerationRepository = rosterGenerationRepository;
         this.prayerSessionRepository = prayerSessionRepository;
-        this.rosterSolvingService = rosterSolvingService;
+        this.eventPublisher = eventPublisher;
     }
 
     public RosterDTO reschedule(Long rosterId, String reason) {
@@ -77,18 +78,7 @@ public class ReschedulingService {
         RosterGeneration savedGeneration = rosterGenerationRepository.save(generation);
         assignments.forEach(assignment -> assignment.setGeneration(savedGeneration));
 
-        boolean feasible = rosterSolvingService.solveAndApply(
-            roster,
-            savedGeneration,
-            assignments,
-            roster.getPeriodFrom(),
-            roster.getPeriodTo(),
-            RosterStatus.REQUIRES_RESCHEDULING
-        );
-
-        if (feasible) {
-            sessions.stream().filter(PrayerSession::isRequiresRescheduling).forEach(session -> session.setRequiresRescheduling(false));
-        }
+        eventPublisher.publishEvent(new RosterGenerationRequestedEvent(savedGeneration.getId()));
 
         return RosterDTO.from(roster);
     }
