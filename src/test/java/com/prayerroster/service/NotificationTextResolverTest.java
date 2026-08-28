@@ -59,6 +59,32 @@ class NotificationTextResolverTest {
     }
 
     @Test
+    void resolveBody_joinsEachItemOnItsOwnLineForABatchedPublishedNotification() {
+        Notification notification = notification(
+            "notification.assignmentsPublished",
+            "[{\"date\":\"2026-09-06\",\"role\":\"MODERATOR\"},{\"date\":\"2026-09-13\",\"role\":\"PREACHER\"}]"
+        );
+
+        String frenchBody = resolver.resolveBody(notification, Locale.FRENCH);
+        assertThat(frenchBody).contains("modérateur").contains("6 septembre 2026");
+        assertThat(frenchBody).contains("prédicateur").contains("13 septembre 2026");
+    }
+
+    @Test
+    void resolveBody_handlesAnEmptyBatchGracefully() {
+        Notification notification = notification("notification.assignmentsRemoved", "[]");
+
+        assertThat(resolver.resolveBody(notification, Locale.FRENCH)).isNotNull();
+    }
+
+    @Test
+    void resolveBody_handlesMalformedBatchJsonGracefully() {
+        Notification notification = notification("notification.assignmentsPublished", "not valid json");
+
+        assertThat(resolver.resolveBody(notification, Locale.FRENCH)).isNotNull();
+    }
+
+    @Test
     void resolveBody_handlesMissingParamsGracefully() {
         Notification notification = notification("notification.assignmentPublished", null);
 

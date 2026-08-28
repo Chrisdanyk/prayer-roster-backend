@@ -7,6 +7,7 @@ import com.prayerroster.domain.Notification;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.time.format.FormatStyle;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.context.MessageSource;
@@ -23,6 +24,9 @@ import org.springframework.stereotype.Component;
 @Component
 public class NotificationTextResolver {
 
+    private static final String KEY_ASSIGNMENTS_PUBLISHED = "notification.assignmentsPublished";
+    private static final String KEY_ASSIGNMENTS_REMOVED = "notification.assignmentsRemoved";
+
     private final MessageSource messageSource;
     private final ObjectMapper objectMapper;
 
@@ -36,11 +40,37 @@ public class NotificationTextResolver {
     }
 
     public String resolveBody(Notification notification, Locale locale) {
+        if (isBatchKey(notification.getMessageKey())) {
+            return resolveBatchBody(notification, locale);
+        }
         Map<String, String> params = parseParams(notification.getParams());
         String date = params.containsKey("date") ? formatDate(params.get("date"), locale) : null;
         String role = params.containsKey("role") ? resolveRole(params.get("role"), locale) : null;
         String daysBefore = params.get("daysBefore");
         return messageSource.getMessage(notification.getMessageKey() + ".body", new Object[] { date, role, daysBefore }, locale);
+    }
+
+    private boolean isBatchKey(String key) {
+        return KEY_ASSIGNMENTS_PUBLISHED.equals(key) || KEY_ASSIGNMENTS_REMOVED.equals(key);
+    }
+
+    private String resolveBatchBody(Notification notification, Locale locale) {
+        String lines = parseParamsList(notification.getParams())
+            .stream()
+            .map(item -> "- " + formatDate(item.get("date"), locale) + " : " + resolveRole(item.get("role"), locale))
+            .collect(java.util.stream.Collectors.joining("\n"));
+        return messageSource.getMessage(notification.getMessageKey() + ".body", new Object[] { lines }, locale);
+    }
+
+    private List<Map<String, String>> parseParamsList(String json) {
+        if (json == null || json.isBlank()) {
+            return List.of();
+        }
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Map<String, String>>>() {});
+        } catch (JsonProcessingException e) {
+            return List.of();
+        }
     }
 
     private String resolveRole(String roleName, Locale locale) {
