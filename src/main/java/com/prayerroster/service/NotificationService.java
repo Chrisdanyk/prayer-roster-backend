@@ -11,6 +11,7 @@ import com.prayerroster.service.dto.NotificationDTO;
 import com.prayerroster.web.rest.errors.EntityNotFoundException;
 import java.time.Instant;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import org.springframework.context.ApplicationEventPublisher;
@@ -32,6 +33,8 @@ public class NotificationService {
     private static final String KEY_ASSIGNMENT_PUBLISHED = "notification.assignmentPublished";
     private static final String KEY_ASSIGNMENT_REMOVED = "notification.assignmentRemoved";
     private static final String KEY_ASSIGNMENT_REMINDER = "notification.assignmentReminder";
+    private static final String KEY_ASSIGNMENTS_PUBLISHED = "notification.assignmentsPublished";
+    private static final String KEY_ASSIGNMENTS_REMOVED = "notification.assignmentsRemoved";
 
     private final NotificationRepository notificationRepository;
     private final NotificationTextResolver textResolver;
@@ -56,6 +59,15 @@ public class NotificationService {
 
     public void notifyAssignmentRemoved(User previousUser, PrayerAssignment assignment) {
         create(previousUser, NotificationType.ASSIGNMENT_REMOVED, KEY_ASSIGNMENT_REMOVED, paramsFor(assignment, null), assignment);
+    }
+
+    /** One notification per run per recipient - see docs/phase1-architecture.md section 13. */
+    public void notifyAssignmentsPublished(User recipient, List<PrayerAssignment> assignments) {
+        create(recipient, NotificationType.ASSIGNMENT_PUBLISHED, KEY_ASSIGNMENTS_PUBLISHED, paramsForBatch(assignments), null);
+    }
+
+    public void notifyAssignmentsRemoved(User recipient, List<PrayerAssignment> assignments) {
+        create(recipient, NotificationType.ASSIGNMENT_REMOVED, KEY_ASSIGNMENTS_REMOVED, paramsForBatch(assignments), null);
     }
 
     public void notifyAssignmentReminder(PrayerAssignment assignment, int daysBefore) {
@@ -84,13 +96,13 @@ public class NotificationService {
         return toDto(notification);
     }
 
-    private void create(User recipient, NotificationType type, String messageKey, Map<String, String> params, PrayerAssignment assignment) {
+    private void create(User recipient, NotificationType type, String messageKey, Object params, PrayerAssignment assignment) {
         Notification notification = new Notification();
         notification.setRecipient(recipient);
         notification.setType(type);
         notification.setMessageKey(messageKey);
         notification.setParams(writeParams(params));
-        notification.setRelatedSession(assignment.getSession());
+        notification.setRelatedSession(assignment != null ? assignment.getSession() : null);
         notification.setRelatedAssignment(assignment);
         Notification saved = notificationRepository.save(notification);
         eventPublisher.publishEvent(new NotificationCreatedEvent(saved.getId()));
@@ -111,7 +123,11 @@ public class NotificationService {
         return params;
     }
 
-    private String writeParams(Map<String, String> params) {
+    private List<Map<String, String>> paramsForBatch(List<PrayerAssignment> assignments) {
+        return assignments.stream().map(a -> paramsFor(a, null)).toList();
+    }
+
+    private String writeParams(Object params) {
         try {
             return objectMapper.writeValueAsString(params);
         } catch (JsonProcessingException e) {

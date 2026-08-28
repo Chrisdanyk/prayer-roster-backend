@@ -135,6 +135,48 @@ class NotificationServiceTest {
     }
 
     @Test
+    void notifyAssignmentsPublished_savesOneNotificationWithAllItemsInParams() {
+        stubSave();
+        User recipient = user("u1", "fr");
+        PrayerAssignment first = assignment(recipient, PrayerAssignmentRole.MODERATOR);
+        PrayerAssignment second = assignment(recipient, PrayerAssignmentRole.PREACHER);
+        second.getSession().setDate(LocalDate.of(2026, 9, 13));
+
+        service.notifyAssignmentsPublished(recipient, List.of(first, second));
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        Notification saved = captor.getValue();
+        assertThat(saved.getRecipient()).isEqualTo(recipient);
+        assertThat(saved.getType()).isEqualTo(NotificationType.ASSIGNMENT_PUBLISHED);
+        assertThat(saved.getMessageKey()).isEqualTo("notification.assignmentsPublished");
+        assertThat(saved.getParams())
+            .contains("\"date\":\"2026-09-06\"")
+            .contains("\"date\":\"2026-09-13\"")
+            .contains("\"role\":\"MODERATOR\"")
+            .contains("\"role\":\"PREACHER\"");
+        assertThat(saved.getRelatedAssignment()).isNull();
+        assertThat(saved.getRelatedSession()).isNull();
+    }
+
+    @Test
+    void notifyAssignmentsRemoved_targetsThePreviousUserAndBatchesAllItems() {
+        stubSave();
+        User previousUser = user("u1", "fr");
+        User currentUser = user("u2", "fr");
+        PrayerAssignment first = assignment(currentUser, PrayerAssignmentRole.MODERATOR);
+        PrayerAssignment second = assignment(currentUser, PrayerAssignmentRole.PREACHER);
+
+        service.notifyAssignmentsRemoved(previousUser, List.of(first, second));
+
+        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
+        verify(notificationRepository).save(captor.capture());
+        assertThat(captor.getValue().getRecipient()).isEqualTo(previousUser);
+        assertThat(captor.getValue().getType()).isEqualTo(NotificationType.ASSIGNMENT_REMOVED);
+        assertThat(captor.getValue().getMessageKey()).isEqualTo("notification.assignmentsRemoved");
+    }
+
+    @Test
     void findOwn_resolvesSubjectAndBodyPerRecipientLocale() {
         User recipient = user("u1", "fr");
         Notification notification = new Notification();
