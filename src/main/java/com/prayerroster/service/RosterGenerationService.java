@@ -18,17 +18,19 @@ import org.springframework.transaction.annotation.Transactional;
 
 /**
  * Turns the recurring weekly template into actual dated {@link PrayerSession}/{@link
- * PrayerAssignment} rows for a period, then hands the resulting planning problem to Timefold via
- * {@link RosterSolvingService} (see docs/phase1-architecture.md sections 4-6, 11, 33). Every
+ * PrayerAssignment} rows for a period (see docs/phase1-architecture.md sections 4-6, 11, 33). Every
  * date-to-config lookup happens up front, in memory, against the whole (small) version history
  * loaded in one query - never one query per date - so this stays O(1) queries regardless of period
- * length. The whole period is validated before anything is persisted: either it generates and
- * solves cleanly in one transaction, or nothing is written at all.
+ * length. The whole period is validated before anything is persisted: either the roster and all its
+ * sessions/assignments are created in this one transaction, or nothing is written at all.
  * <p>
- * On a feasible solve, assignments are filled in and the {@link Roster} auto-publishes (per the
- * roster lifecycle decision - no manual review step for the happy path). On an infeasible solve,
- * the {@link RosterGeneration} records why (a per-constraint violation breakdown) and the
- * {@link Roster} stays {@link RosterStatus#DRAFT} for an admin to investigate.
+ * This class only validates and creates - it never solves. Once the roster/sessions/assignments are
+ * committed, it publishes a {@link RosterGenerationRequestedEvent}; the actual Timefold solve, and
+ * the feasible/infeasible outcome that follows from it, happen later and asynchronously, in {@link
+ * RosterSolvingService#solveAndApply(Long)}, run by {@link RosterSolvingListener} once that event
+ * fires after commit. The {@link Roster} this method returns is always the freshly created {@link
+ * RosterStatus#DRAFT} one; whether it ends up {@link RosterStatus#PUBLISHED} or stays {@code DRAFT}
+ * for an admin to investigate is decided later, off this thread.
  */
 @Service
 @Transactional
@@ -96,9 +98,8 @@ public class RosterGenerationService {
         generation.setRegenerated(false);
         generation = rosterGenerationRepository.save(generation);
 
-        List<PrayerAssignment> assignments = new ArrayList<>();
         for (RequiredSession required : requiredSessions) {
-            assignments.addAll(createSession(roster, generation, required));
+            createSession(roster, generation, required);
         }
 
         eventPublisher.publishEvent(new RosterGenerationRequestedEvent(generation.getId()));

@@ -83,44 +83,6 @@ class NotificationServiceTest {
     }
 
     @Test
-    void notifyAssignmentPublished_savesNotificationAndPublishesEvent() {
-        stubSave();
-        User recipient = user("u1", "fr");
-        PrayerAssignment assignment = assignment(recipient, PrayerAssignmentRole.MODERATOR);
-
-        service.notifyAssignmentPublished(assignment);
-
-        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-        verify(notificationRepository).save(captor.capture());
-        Notification saved = captor.getValue();
-        assertThat(saved.getRecipient()).isEqualTo(recipient);
-        assertThat(saved.getType()).isEqualTo(NotificationType.ASSIGNMENT_PUBLISHED);
-        assertThat(saved.getMessageKey()).isEqualTo("notification.assignmentPublished");
-        assertThat(saved.getParams()).contains("\"date\":\"2026-09-06\"").contains("\"role\":\"MODERATOR\"");
-        assertThat(saved.getRelatedAssignment()).isEqualTo(assignment);
-        assertThat(saved.getRelatedSession()).isEqualTo(assignment.getSession());
-
-        ArgumentCaptor<NotificationCreatedEvent> eventCaptor = ArgumentCaptor.forClass(NotificationCreatedEvent.class);
-        verify(eventPublisher).publishEvent(eventCaptor.capture());
-        assertThat(eventCaptor.getValue().notificationId()).isEqualTo(saved.getId());
-    }
-
-    @Test
-    void notifyAssignmentRemoved_targetsThePreviousUserNotTheAssignmentsCurrentUser() {
-        stubSave();
-        User previousUser = user("u1", "fr");
-        User currentUser = user("u2", "fr");
-        PrayerAssignment assignment = assignment(currentUser, PrayerAssignmentRole.PREACHER);
-
-        service.notifyAssignmentRemoved(previousUser, assignment);
-
-        ArgumentCaptor<Notification> captor = ArgumentCaptor.forClass(Notification.class);
-        verify(notificationRepository).save(captor.capture());
-        assertThat(captor.getValue().getRecipient()).isEqualTo(previousUser);
-        assertThat(captor.getValue().getType()).isEqualTo(NotificationType.ASSIGNMENT_REMOVED);
-    }
-
-    @Test
     void notifyAssignmentReminder_includesDaysBeforeInParams() {
         stubSave();
         User recipient = user("u1", "fr");
@@ -242,14 +204,14 @@ class NotificationServiceTest {
     }
 
     @Test
-    void notifyAssignmentPublished_wrapsParamSerializationFailure() throws Exception {
+    void notifyAssignmentReminder_wrapsParamSerializationFailure() throws Exception {
         ObjectMapper failingMapper = mock(ObjectMapper.class);
         JsonProcessingException failure = mock(JsonProcessingException.class);
         when(failingMapper.writeValueAsString(any())).thenThrow(failure);
         NotificationService failingService = new NotificationService(notificationRepository, textResolver, eventPublisher, failingMapper);
         PrayerAssignment assignment = assignment(user("u1", "fr"), PrayerAssignmentRole.MODERATOR);
 
-        assertThatThrownBy(() -> failingService.notifyAssignmentPublished(assignment))
+        assertThatThrownBy(() -> failingService.notifyAssignmentReminder(assignment, 7))
             .isInstanceOf(IllegalStateException.class)
             .hasCause(failure);
     }

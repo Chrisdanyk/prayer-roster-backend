@@ -5,6 +5,7 @@ import com.prayerroster.domain.PrayerSession;
 import com.prayerroster.domain.Roster;
 import com.prayerroster.domain.RosterGeneration;
 import com.prayerroster.domain.RosterGenerationStatus;
+import com.prayerroster.domain.RosterGenerationTrigger;
 import com.prayerroster.domain.RosterStatus;
 import com.prayerroster.domain.User;
 import com.prayerroster.domain.UserAvailability;
@@ -30,12 +31,17 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * Shared "solve this planning problem and apply the outcome" orchestration, used by both initial
- * roster generation and rescheduling (see docs/phase1-architecture.md sections 6, 12, 33) - the two
- * differ only in how they arrive at their {@code assignments}/{@code generation} row and in which
- * {@link RosterStatus} the roster falls back to when the solve is infeasible: {@code DRAFT} for a
- * brand-new roster that was never published, {@code REQUIRES_RESCHEDULING} for one that was already
- * live and still needs attention.
+ * Shared "solve this planning problem and apply the outcome" orchestration, used for both initial
+ * roster generation and rescheduling (see docs/phase1-architecture.md sections 6, 12, 33). Invoked
+ * by {@link RosterSolvingListener} once it picks up a {@link RosterGenerationRequestedEvent},
+ * {@link #solveAndApply(Long)} is fully self-contained: given just a {@link RosterGeneration} id, it
+ * re-fetches the roster and its assignments itself, and derives which {@link RosterStatus} the
+ * roster falls back to when the solve is infeasible from {@link RosterGeneration#getTrigger()} -
+ * {@code DRAFT} for a brand-new roster that was never published, {@code REQUIRES_RESCHEDULING} for
+ * one that was already live and still needs attention. For a {@link RosterGenerationTrigger#RESCHEDULE}
+ * trigger specifically, a successful solve also clears {@code requiresRescheduling} on every affected
+ * session - a responsibility that used to live in {@code ReschedulingService} before this method
+ * became self-contained.
  * <p>
  * On a feasible solve, every assignment whose {@code user} actually changed (a fresh fill from
  * initial generation, or a reassignment from rescheduling) triggers a notification: the newly
@@ -81,7 +87,7 @@ public class RosterSolvingService {
         List<PrayerAssignment> assignments = prayerAssignmentRepository.findByGenerationIdWithSessionAndUser(generationId);
         LocalDate availabilityWindowFrom = generation.getPlanningFrom();
         LocalDate availabilityWindowTo = generation.getPlanningTo();
-        RosterStatus statusOnInfeasible = generation.getTrigger() == com.prayerroster.domain.RosterGenerationTrigger.RESCHEDULE
+        RosterStatus statusOnInfeasible = generation.getTrigger() == RosterGenerationTrigger.RESCHEDULE
             ? RosterStatus.REQUIRES_RESCHEDULING
             : RosterStatus.DRAFT;
 
@@ -96,6 +102,9 @@ public class RosterSolvingService {
         long solverDurationMs;
         RosterSolution solved = null;
         if (eligibleUsers.isEmpty()) {
+            // Timefold refuses to solve an empty value range outright, and there is nothing to gain
+            // from trying anyway: with zero eligible users nothing can ever be filled, so
+            // short-circuit straight to an infeasible outcome instead of invoking the solver.
             hardScore = -assignments.size();
             softScore = 0;
             solverDurationMs = 0;
@@ -122,6 +131,11 @@ public class RosterSolvingService {
             Map<User, List<PrayerAssignment>> newlyRemoved = new LinkedHashMap<>();
             for (PrayerAssignment managed : assignments) {
                 User previousUser = managed.getUser();
+                // A feasible solve (hardScore == 0) mathematically guarantees newUser is non-null
+                // here: everyAssignmentMustBeFilled contributes a hard violation for any unfilled
+                // assignment, so hardScore couldn't be zero if one existed. That matters because
+                // newUser is used below as a key in newlyPublished (a LinkedHashMap) - a null key
+                // there would silently pass a null recipient into a notification call.
                 User newUser = solvedById.get(managed.getId()).getUser();
                 if (!Objects.equals(previousUser, newUser)) {
                     managed.setUser(newUser);
@@ -137,7 +151,7 @@ public class RosterSolvingService {
             generation.setStatus(RosterGenerationStatus.COMPLETED);
             roster.setStatus(RosterStatus.PUBLISHED);
             roster.setPublishedAt(Instant.now());
-            if (generation.getTrigger() == com.prayerroster.domain.RosterGenerationTrigger.RESCHEDULE) {
+            if (generation.getTrigger() == RosterGenerationTrigger.RESCHEDULE) {
                 assignments
                     .stream()
                     .map(PrayerAssignment::getSession)

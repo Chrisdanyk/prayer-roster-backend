@@ -7,6 +7,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.mail.MailSendException;
 import org.springframework.mail.javamail.JavaMailSender;
 import org.springframework.mail.javamail.MimeMessageHelper;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.thymeleaf.context.Context;
 import org.thymeleaf.spring6.SpringTemplateEngine;
@@ -15,9 +16,13 @@ import tech.jhipster.config.JHipsterProperties;
 /**
  * Low-level email sending - wraps the already-localized subject/body text (resolved by {@link
  * NotificationTextResolver}) in a minimal HTML template (see docs/phase1-architecture.md section
- * 13). Deliberately never swallows failures itself: {@link EmailNotificationService} is the layer
- * responsible for catching send failures and recording them, so a mail provider outage is visible
- * on the {@code Notification} row rather than silently lost here.
+ * 13). {@link #sendEmail(String, String, String, String, String)} deliberately never swallows
+ * failures itself: {@link EmailNotificationService} is the layer responsible for catching send
+ * failures and recording them, so a mail provider outage is visible on the {@code Notification} row
+ * rather than silently lost here. {@link #sendEmailAsync} is the exception to that rule: it
+ * deliberately swallows failures itself (logging instead of throwing), because its callers (e.g.
+ * {@link AllowedEmailService}) have no {@code Notification} row to hang a retry sweep off in the
+ * first place.
  */
 @Service
 public class MailService {
@@ -70,7 +75,7 @@ public class MailService {
      * {@code @Async void} methods report failures to the executor's uncaught-exception handler, not
      * back to the call site - so the catch has to live in this method, not in the caller.
      */
-    @org.springframework.scheduling.annotation.Async
+    @Async
     public void sendEmailAsync(String to, String subject, String textBody, String actionUrl, String actionLabel) {
         try {
             sendEmail(to, subject, textBody, actionUrl, actionLabel);

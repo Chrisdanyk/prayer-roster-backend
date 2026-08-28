@@ -30,8 +30,6 @@ import org.springframework.transaction.annotation.Transactional;
 @Transactional
 public class NotificationService {
 
-    private static final String KEY_ASSIGNMENT_PUBLISHED = "notification.assignmentPublished";
-    private static final String KEY_ASSIGNMENT_REMOVED = "notification.assignmentRemoved";
     private static final String KEY_ASSIGNMENT_REMINDER = "notification.assignmentReminder";
     private static final String KEY_ASSIGNMENTS_PUBLISHED = "notification.assignmentsPublished";
     private static final String KEY_ASSIGNMENTS_REMOVED = "notification.assignmentsRemoved";
@@ -51,14 +49,6 @@ public class NotificationService {
         this.textResolver = textResolver;
         this.eventPublisher = eventPublisher;
         this.objectMapper = objectMapper;
-    }
-
-    public void notifyAssignmentPublished(PrayerAssignment assignment) {
-        create(assignment.getUser(), NotificationType.ASSIGNMENT_PUBLISHED, KEY_ASSIGNMENT_PUBLISHED, paramsFor(assignment, null), assignment);
-    }
-
-    public void notifyAssignmentRemoved(User previousUser, PrayerAssignment assignment) {
-        create(previousUser, NotificationType.ASSIGNMENT_REMOVED, KEY_ASSIGNMENT_REMOVED, paramsFor(assignment, null), assignment);
     }
 
     /** One notification per run per recipient - see docs/phase1-architecture.md section 13. */
